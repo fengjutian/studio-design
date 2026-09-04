@@ -10,4 +10,33 @@
 
 ## 当前状态
 
-项目处于产品定义阶段。首期视频生成引擎计划接入 MiniMax，核心体验为 `Idea → Movie`。
+首个可运行原型已包含：
+
+- 从一句话生成 AI 导演提案
+- 故事、场景与五镜头分镜方案
+- 电影工作台、镜头导航和基础时间线
+- 普通模式与导演模式切换
+- 本地项目自动保存
+- 无 API Key 时可体验的镜头生成模拟
+
+MiniMax 真实生成接口将在 Provider 层接入，核心体验为 `Idea → Movie`。
+
+## 本地开发
+
+```bash
+npm install
+npm run dev
+```
+
+启动 Tauri 桌面应用：
+
+```bash
+npm run tauri dev
+```
+
+检查与测试：
+
+```bash
+npm run build
+npm test
+```
