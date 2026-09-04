@@ -221,6 +221,10 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .disabled-card { opacity: .58; }
 .cost-note { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 12px; border-radius: 7px; color: #afa065; background: rgba(200,175,80,.06); border: 1px solid rgba(200,175,80,.11); }
 .cost-note p { margin: 0; font-size: 9px; }
+.inline-setting { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line); display: flex; align-items: end; gap: 12px; }
+.inline-setting label { display: grid; gap: 5px; color: #73716c; font-size: 9px; }
+.inline-setting select { height: 34px; min-width: 210px; border: 1px solid var(--line); border-radius: 7px; background: #0d0d0e; color: #b0ada6; padding: 0 9px; font-size: 10px; }
+.inline-setting p { color: #5e5c58; font-size: 8px; margin: 0 0 8px; }
 
 .dialog-backdrop { position: fixed; z-index: 30; inset: 0; display: grid; place-items: center; background: rgba(2,2,3,.78); backdrop-filter: blur(7px); }
 .export-dialog { width: min(560px, calc(100% - 48px)); padding: 31px; border: 1px solid rgba(255,255,255,.12); border-radius: 15px; background: #151517; box-shadow: 0 35px 100px #000; text-align: center; }

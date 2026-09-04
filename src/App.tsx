@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   ArrowLeft,
@@ -17,21 +18,24 @@ import {
   Layers3,
   MessageCircleMore,
   MoreHorizontal,
+  Music2,
+  Pause,
   Play,
   Plus,
   RotateCcw,
+  Scissors,
   Settings,
   ShieldCheck,
   Sparkles,
   Download,
   WandSparkles,
+  Volume2,
 } from "lucide-react";
-import { createDirectorProposal } from "./lib/director";
 import { developIdea } from "./lib/aiDirector";
 import { getVideoProvider } from "./lib/providers";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
-import { getTimelineShots, moveTimelineShot } from "./lib/timeline";
+import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./lib/timeline";
 import { loadProjects, loadSettings, saveProjects, saveSettings } from "./lib/storage";
 import type { GenerationSettings, MovieProject, Shot } from "./types";
 
@@ -342,9 +346,31 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [playingTimeline, setPlayingTimeline] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const allShots = useMemo(() => getTimelineShots(project), [project]);
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
-  const totalDuration = allShots.reduce((sum, item) => sum + item.duration, 0);
+  const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
+  const selectedSource = selected?.videoUrl ?? (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !playingTimeline) return;
+    video.currentTime = selected?.trimStart ?? 0;
+    void video.play().catch(() => setPlayingTimeline(false));
+  }, [selected?.id, selected?.trimStart, playingTimeline]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playingTimeline) {
+      if (audio.paused) audio.currentTime = project.soundtrack?.trimStart ?? 0;
+      void audio.play().catch(() => undefined);
+    } else {
+      audio.pause();
+    }
+  }, [playingTimeline, project.soundtrack?.trimStart]);
 
   const generate = async () => {
     if (!selected) return;
@@ -374,6 +400,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             taskId: result.taskId,
             videoUrl: result.videoUrl,
             localAssetPath: result.localAssetPath,
+            trimStart: 0,
+            trimEnd: settings.duration,
             generationError: undefined,
           } : shot),
         })),
@@ -410,6 +438,41 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     }
   };
 
+  const advancePreview = () => {
+    const index = allShots.findIndex((shot) => shot.id === selected?.id);
+    const next = allShots[index + 1];
+    if (playingTimeline && next) onSelectShot(next.id);
+    else {
+      setPlayingTimeline(false);
+      if (audioRef.current) audioRef.current.pause();
+    }
+  };
+
+  const startPreview = () => {
+    const firstPlayable = allShots.find((shot) => shot.videoUrl || shot.localAssetPath);
+    if (!firstPlayable) return;
+    onSelectShot(firstPlayable.id);
+    setPlayingTimeline(true);
+  };
+
+  const updateTrim = (field: "trimStart" | "trimEnd", value: number) => {
+    if (!selected) return;
+    const limit = selected.trimEnd ?? selected.duration;
+    const start = field === "trimStart" ? Math.min(value, limit - 0.1) : selected.trimStart ?? 0;
+    const end = field === "trimEnd" ? Math.max(value, start + 0.1) : limit;
+    onUpdate({ ...project, scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, trimStart: start, trimEnd: end } : shot) })), updatedAt: new Date().toISOString() });
+  };
+
+  const importSoundtrack = async () => {
+    if (!project.localPath) { onSaveAs(); return; }
+    try {
+      const result = await invoke<{ path: string; name: string; duration: number } | null>("import_audio", { projectPath: project.localPath });
+      if (result) onUpdate({ ...project, soundtrack: { id: crypto.randomUUID(), localPath: result.path, name: result.name, duration: result.duration, trimStart: 0, volume: 0.8 }, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   return (
     <div className="studio-view">
       <header className="studio-header workspace-header">
@@ -417,7 +480,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         <div className="project-title"><span className="header-kicker">MY FILM</span><h2>《{project.title}》</h2></div>
         <div className="save-state">{project.localPath ? <><Check size={14} /> 已保存到本地</> : <>暂存在应用中</>}</div>
         <button className="quiet-button" onClick={onSaveAs}><HardDrive size={15} /> {project.localPath ? "另存为" : "保存项目"}</button>
-        <button className="quiet-button"><Play size={15} fill="currentColor" /> 预览全片</button>
+        <button className="quiet-button" onClick={playingTimeline ? () => setPlayingTimeline(false) : startPreview}>{playingTimeline ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />} {playingTimeline ? "暂停预览" : "预览全片"}</button>
         <button className="primary-button compact" onClick={() => setExportOpen(true)}>导出电影 <ArrowRight size={15} /></button>
       </header>
       <div className="workspace">
@@ -442,7 +505,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="preview-canvas">
             <div className="frame-lines" />
             {selected?.generationStatus === "completed" ? (
-              selected.videoUrl ? <video className="generated-video" src={selected.videoUrl} controls /> : <div className="generated-frame"><span className="generated-number">{String(selected.number).padStart(2, "0")}</span><p>{selected.title}</p><button><Play size={22} fill="currentColor" /></button></div>
+              selectedSource ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= (selected.trimEnd ?? selected.duration)) advancePreview(); }} /> : <div className="generated-frame"><span className="generated-number">{String(selected.number).padStart(2, "0")}</span><p>{selected.title}</p><button><Play size={22} fill="currentColor" /></button></div>
             ) : selected?.generationStatus === "generating" ? (
               <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>AI 摄影、灯光和演员正在就位…</p></div>
             ) : selected?.generationStatus === "failed" ? (
@@ -451,6 +514,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
               <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>确认右侧的导演意图，然后生成这个镜头。</p><button className="primary-button" onClick={generate}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · ${settings.duration} 秒`}</small></div>
             )}
           </div>
+          {selected?.generationStatus === "completed" && selectedSource && <div className="trim-editor"><span><Scissors size={13} /> 裁剪</span><label>入点 <input type="range" min={0} max={Math.max(.2, (selected.trimEnd ?? selected.duration) - .1)} step="0.1" value={selected.trimStart ?? 0} onChange={(event) => updateTrim("trimStart", Number(event.target.value))} /><b>{(selected.trimStart ?? 0).toFixed(1)}s</b></label><label>出点 <input type="range" min={Math.min(selected.duration - .1, (selected.trimStart ?? 0) + .1)} max={selected.duration} step="0.1" value={selected.trimEnd ?? selected.duration} onChange={(event) => updateTrim("trimEnd", Number(event.target.value))} /><b>{(selected.trimEnd ?? selected.duration).toFixed(1)}s</b></label></div>}
           <div className="shot-description"><span>导演意图</span><p>{selected?.description}</p><div><span>{selected?.framing}</span><span>{selected?.movement}</span><span>{selected?.duration} 秒</span></div></div>
         </section>
 
@@ -468,6 +532,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         <div className="timeline-track">
           {allShots.map((shot) => <button key={shot.id} style={{ flex: shot.duration }} className={shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shot.duration}s</i></button>)}
         </div>
+        <div className="audio-track-row"><span><Music2 size={12} /> 配乐</span>{project.soundtrack ? <div className="audio-clip"><b>{project.soundtrack.name}</b><label><Volume2 size={11} /><input type="range" min="0" max="1.5" step="0.05" value={project.soundtrack.volume} onChange={(event) => onUpdate({ ...project, soundtrack: { ...project.soundtrack!, volume: Number(event.target.value) }, updatedAt: new Date().toISOString() })} /></label></div> : <button onClick={importSoundtrack}><Plus size={12} /> 导入配乐</button>}</div>
+        {project.soundtrack && isDesktopApp() && <audio ref={audioRef} src={convertFileSrc(project.soundtrack.localPath)} />}
       </div>
       {exportOpen && <ExportDialog project={project} exporting={exporting} error={exportError} onExport={runExport} onClose={() => { if (!exporting) setExportOpen(false); }} />}
     </div>
@@ -515,6 +581,14 @@ function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: Settin
       <div className="settings-content">
         <div className="settings-intro"><span>GENERATION</span><h1>电影生成引擎</h1><p>选择幕后使用的制作引擎。你可以先在体验模式完成创作流程，再连接真实服务。</p></div>
         <section className="settings-card">
+          <div className="settings-card-title"><Clapperboard size={19} /><div><h3>AI 导演引擎</h3><p>决定一句话由本地模板还是大模型发展成完整分镜。</p></div></div>
+          <div className="provider-options">
+            <button className={settings.directorProvider === "local" ? "provider-option active" : "provider-option"} onClick={() => set("directorProvider", "local")}><span className="provider-radio" /><div><strong>本地导演</strong><p>即时生成固定结构，不联网、不产生费用。</p></div><i>体验</i></button>
+            <button className={settings.directorProvider === "minimax" ? "provider-option active" : "provider-option"} onClick={() => set("directorProvider", "minimax")}><span className="provider-radio" /><div><strong>MiniMax AI 导演</strong><p>理解任意创意，生成连贯的多场景分镜。</p></div><i>智能</i></button>
+          </div>
+          {settings.directorProvider === "minimax" && <div className="inline-setting"><label><span>导演模型</span><select value={settings.directorModel} onChange={(event) => set("directorModel", event.target.value as GenerationSettings["directorModel"])}><option>MiniMax-M2.7</option><option>MiniMax-M2.7-highspeed</option></select></label><p>与视频引擎共用下方 API Key。</p></div>}
+        </section>
+        <section className="settings-card">
           <div className="settings-card-title"><Sparkles size={19} /><div><h3>生成服务</h3><p>控制镜头由模拟引擎还是真实模型生成。</p></div></div>
           <div className="provider-options">
             <button className={settings.provider === "mock" ? "provider-option active" : "provider-option"} onClick={() => set("provider", "mock")}>
@@ -526,10 +600,10 @@ function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: Settin
           </div>
         </section>
 
-        <section className={settings.provider === "minimax" ? "settings-card" : "settings-card disabled-card"}>
+        <section className={settings.provider === "minimax" || settings.directorProvider === "minimax" ? "settings-card" : "settings-card disabled-card"}>
           <div className="settings-card-title"><KeyRound size={19} /><div><h3>MiniMax 连接</h3><p>密钥只在应用运行期间保存在内存中，关闭后自动清除。</p></div></div>
           <div className="settings-form">
-            <label className="wide-field"><span>API Key</span><input type="password" value={apiKey} disabled={settings.provider !== "minimax"} onChange={(event) => onApiKey(event.target.value)} placeholder="输入 MiniMax API Key" /><small><ShieldCheck size={12} /> 不写入项目文件或浏览器存储</small></label>
+            <label className="wide-field"><span>API Key</span><input type="password" value={apiKey} disabled={settings.provider !== "minimax" && settings.directorProvider !== "minimax"} onChange={(event) => onApiKey(event.target.value)} placeholder="输入 MiniMax API Key" /><small><ShieldCheck size={12} /> 不写入项目文件或浏览器存储</small></label>
             <label><span>视频模型</span><select value={settings.model} disabled={settings.provider !== "minimax"} onChange={(event) => set("model", event.target.value as GenerationSettings["model"])}><option>MiniMax-Hailuo-2.3</option><option>MiniMax-Hailuo-02</option><option>T2V-01-Director</option></select></label>
             <label><span>分辨率</span><select value={settings.resolution} disabled={settings.provider !== "minimax"} onChange={(event) => set("resolution", event.target.value as GenerationSettings["resolution"])}><option>768P</option><option>1080P</option></select></label>
             <label><span>单镜头时长</span><select value={settings.duration} disabled={settings.provider !== "minimax"} onChange={(event) => set("duration", Number(event.target.value) as 6 | 10)}><option value={6}>6 秒</option><option value={10}>10 秒</option></select></label>

@@ -83,6 +83,61 @@ struct ImportedAudio {
     duration: f64,
 }
 
+#[derive(Deserialize)]
+struct ChatCompletionResponse {
+    choices: Vec<ChatChoice>,
+    base_resp: BaseResponse,
+}
+
+#[derive(Deserialize)]
+struct ChatChoice {
+    message: ChatMessage,
+}
+
+#[derive(Deserialize)]
+struct ChatMessage {
+    content: String,
+}
+
+#[tauri::command]
+async fn minimax_director_proposal(
+    api_key: String,
+    idea: String,
+    model: String,
+) -> Result<String, String> {
+    validate_key(&api_key)?;
+    if idea.trim().is_empty() || idea.chars().count() > 4000 {
+        return Err("The movie idea must contain between 1 and 4000 characters.".into());
+    }
+    if !matches!(model.as_str(), "MiniMax-M2.7" | "MiniMax-M2.7-highspeed") {
+        return Err("Unsupported AI director model.".into());
+    }
+    let system = r#"You are the behind-the-scenes director for a Chinese AI filmmaking desktop application. Turn the user's idea into a concise, filmable short movie plan. Return only valid JSON, with no Markdown. Schema: {"title":string,"synopsis":string,"visualStyle":string,"scenes":[{"title":string,"location":string,"mood":string,"shots":[{"title":string,"description":string,"framing":string,"movement":string,"duration":number}]}]}. Use Chinese. Create 1-5 scenes and 3-12 shots total. Each shot must be visually specific, continuous with adjacent shots, and 2-10 seconds long. framing and movement should be understandable Chinese film terms."#;
+    let response = client()
+        .post(format!("{MINIMAX_API_BASE}/chat/completions"))
+        .bearer_auth(api_key.trim())
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "name": "Director Studio", "content": system},
+                {"role": "user", "name": "Director", "content": idea}
+            ],
+            "temperature": 1.0,
+            "max_completion_tokens": 4096
+        }))
+        .send()
+        .await
+        .map_err(network_error)?;
+    let status = response.status();
+    let body: ChatCompletionResponse = response.json().await.map_err(parse_error)?;
+    ensure_success(status, &body.base_resp)?;
+    body.choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content)
+        .ok_or_else(|| "AI director returned no proposal.".into())
+}
+
 #[tauri::command]
 fn allow_project_assets(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let project = std::fs::canonicalize(path)
@@ -547,6 +602,7 @@ pub fn run() {
             save_project_file,
             download_generation,
             export_movie,
+            minimax_director_proposal,
             minimax_create_video,
             minimax_query_video,
             minimax_retrieve_file
