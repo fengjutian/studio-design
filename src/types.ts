@@ -34,6 +34,7 @@ export interface MovieProject {
   status: ProjectStatus;
   updatedAt: string;
   scenes: Scene[];
+  localPath?: string;
 }
 
 export type ProviderKind = "mock" | "minimax";

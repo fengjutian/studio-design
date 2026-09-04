@@ -20,10 +20,22 @@
 - 无 API Key 时可体验的镜头生成模拟
 - MiniMax Hailuo 真实视频生成（Tauri 桌面端）
 - 生成失败提示与镜头重试
+- 本地 `.movie` 项目目录创建、打开和自动保存
 
 MiniMax 已通过独立 Provider 层接入，核心体验为 `Idea → Movie`。在“设置 → 电影生成引擎”中切换至 MiniMax 并输入 API Key；密钥仅保存在当前应用会话内存中。
 
 真实视频生成遵循 MiniMax 的异步流程：创建任务、每 10 秒查询状态、成功后获取视频地址。默认仍使用不产生费用的体验模式。
+
+桌面端可以将电影保存为项目目录：
+
+```text
+电影名.movie/
+├── project.json
+├── assets/
+├── generations/
+├── thumbnails/
+└── exports/
+```
 
 ## 本地开发
 

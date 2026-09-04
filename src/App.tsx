@@ -9,6 +9,7 @@ import {
   Clock3,
   Film,
   FolderOpen,
+  HardDrive,
   Home,
   KeyRound,
   Layers3,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { createDirectorProposal } from "./lib/director";
 import { getVideoProvider } from "./lib/providers";
+import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
 import { loadProjects, loadSettings, saveProjects, saveSettings } from "./lib/storage";
 import type { GenerationSettings, MovieProject, Shot } from "./types";
 
@@ -44,6 +46,7 @@ export default function App() {
   const [isThinking, setIsThinking] = useState(false);
   const [settings, setSettings] = useState<GenerationSettings>(loadSettings);
   const [apiKey, setApiKey] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveSettings(settings), [settings]);
@@ -74,6 +77,17 @@ export default function App() {
     setView("studio");
   };
 
+  const openLocalProject = async () => {
+    try {
+      const project = await openProjectFile();
+      if (!project) return;
+      setProjects((current) => [project, ...current.filter((item) => item.id !== project.id)]);
+      openProject(project);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
   const goHome = () => {
     setView("home");
     setActive(null);
@@ -83,6 +97,25 @@ export default function App() {
   const updateProject = (next: MovieProject) => {
     setActive(next);
     setProjects((current) => [next, ...current.filter((item) => item.id !== next.id)]);
+    void saveProjectFile(next).catch((error) => showNotice(`自动保存失败：${String(error)}`));
+  };
+
+  const saveProjectAs = async () => {
+    if (!active) return;
+    try {
+      const saved = await createProjectDirectory(active);
+      if (saved) {
+        updateProject(saved);
+        showNotice("电影项目已保存到本地目录。", 2400);
+      }
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const showNotice = (message: string, duration = 4200) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), duration);
   };
 
   return (
@@ -98,6 +131,7 @@ export default function App() {
             onBegin={begin}
             onPrompt={setIdea}
             onOpen={openProject}
+            onOpenFile={openLocalProject}
           />
         )}
         {view === "proposal" && active && (
@@ -112,12 +146,14 @@ export default function App() {
             onBack={goHome}
             settings={settings}
             apiKey={apiKey}
+            onSaveAs={saveProjectAs}
           />
         )}
         {view === "settings" && (
           <SettingsView settings={settings} apiKey={apiKey} onSettings={setSettings} onApiKey={setApiKey} onBack={goHome} />
         )}
       </main>
+      {notice && <div className="app-notice"><AlertCircle size={16} />{notice}</div>}
     </div>
   );
 }
@@ -158,15 +194,16 @@ interface HomeProps {
   onBegin: () => void;
   onPrompt: (value: string) => void;
   onOpen: (project: MovieProject) => void;
+  onOpenFile: () => void;
 }
 
-function HomeView({ idea, projects, isThinking, onIdea, onBegin, onPrompt, onOpen }: HomeProps) {
+function HomeView({ idea, projects, isThinking, onIdea, onBegin, onPrompt, onOpen, onOpenFile }: HomeProps) {
   return (
     <div className="home-view">
       <header className="topbar">
         <div className="wordmark"><span>片场</span><i>DIRECTOR STUDIO</i></div>
         <div className="topbar-actions">
-          <button className="quiet-button"><FolderOpen size={16} /> 打开项目</button>
+          <button className="quiet-button" onClick={onOpenFile} title={isDesktopApp() ? "选择 project.json" : "请在桌面应用中使用"}><FolderOpen size={16} /> 打开项目</button>
           <div className="avatar">导</div>
         </div>
       </header>
@@ -288,9 +325,10 @@ interface StudioProps {
   onBack: () => void;
   settings: GenerationSettings;
   apiKey: string;
+  onSaveAs: () => void;
 }
 
-function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, settings, apiKey }: StudioProps) {
+function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, settings, apiKey, onSaveAs }: StudioProps) {
   const [directorMode, setDirectorMode] = useState(false);
   const allShots = project.scenes.flatMap((scene) => scene.shots);
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
@@ -346,7 +384,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
       <header className="studio-header workspace-header">
         <button className="icon-button" onClick={onBack}><ArrowLeft size={19} /></button>
         <div className="project-title"><span className="header-kicker">MY FILM</span><h2>《{project.title}》</h2></div>
-        <div className="save-state"><Check size={14} /> 已自动保存</div>
+        <div className="save-state">{project.localPath ? <><Check size={14} /> 已保存到本地</> : <>暂存在应用中</>}</div>
+        <button className="quiet-button" onClick={onSaveAs}><HardDrive size={15} /> {project.localPath ? "另存为" : "保存项目"}</button>
         <button className="quiet-button"><Play size={15} fill="currentColor" /> 预览全片</button>
         <button className="primary-button compact">导出电影 <ArrowRight size={15} /></button>
       </header>
