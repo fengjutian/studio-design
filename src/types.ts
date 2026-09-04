@@ -57,6 +57,8 @@ export type MiniMaxModel = "MiniMax-Hailuo-2.3" | "MiniMax-Hailuo-02" | "T2V-01-
 
 export interface GenerationSettings {
   provider: ProviderKind;
+  directorProvider: "local" | "minimax";
+  directorModel: "MiniMax-M2.7" | "MiniMax-M2.7-highspeed";
   model: MiniMaxModel;
   resolution: "768P" | "1080P";
   duration: 6 | 10;

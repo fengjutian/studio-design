@@ -63,6 +63,47 @@ export function createDirectorProposal(idea: string): MovieProject {
   return project;
 }
 
+export interface DirectorResponse {
+  title: string;
+  synopsis: string;
+  visualStyle: string;
+  scenes: Array<{
+    title: string;
+    location: string;
+    mood: string;
+    shots: Array<{ title: string; description: string; framing: string; movement: string; duration: number }>;
+  }>;
+}
+
+export function createProjectFromDirectorResponse(idea: string, response: DirectorResponse): MovieProject {
+  if (!response.title || !response.synopsis || !Array.isArray(response.scenes) || response.scenes.length === 0) {
+    throw new Error("AI 导演返回的故事结构不完整。");
+  }
+  const scenes = response.scenes.slice(0, 8).map((scene, sceneIndex) => ({
+    id: uid(),
+    number: sceneIndex + 1,
+    title: scene.title || `场景 ${sceneIndex + 1}`,
+    location: scene.location || "未命名地点",
+    mood: scene.mood || "自然",
+    shots: (scene.shots ?? []).slice(0, 20).map((item, shotIndex) => shot(
+      shotIndex + 1,
+      item.title || `镜头 ${shotIndex + 1}`,
+      item.description || "人物在场景中行动。",
+      item.framing || "中景",
+      item.movement || "静止",
+      Math.min(10, Math.max(2, Number(item.duration) || 5)),
+    )),
+  })).filter((scene) => scene.shots.length > 0);
+  if (!scenes.length) throw new Error("AI 导演没有返回可用镜头。");
+  const project: MovieProject = {
+    id: uid(), title: response.title.slice(0, 40), idea, synopsis: response.synopsis,
+    visualStyle: response.visualStyle || "电影写实", status: "设计中",
+    updatedAt: new Date().toISOString(), scenes,
+  };
+  project.timelineOrder = scenes.flatMap((scene) => scene.shots.map((item) => item.id));
+  return project;
+}
+
 function extractTitle(idea: string) {
   const clean = idea.replace(/[，。！？,.!?\s]/g, "");
   return clean.slice(0, 6) || "未命名电影";

@@ -27,6 +27,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { createDirectorProposal } from "./lib/director";
+import { developIdea } from "./lib/aiDirector";
 import { getVideoProvider } from "./lib/providers";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
@@ -56,15 +57,18 @@ export default function App() {
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveSettings(settings), [settings]);
 
-  const begin = () => {
+  const begin = async () => {
     if (!idea.trim()) return;
     setIsThinking(true);
-    window.setTimeout(() => {
-      const project = createDirectorProposal(idea.trim());
+    try {
+      const project = await developIdea(idea.trim(), settings, apiKey);
       setActive(project);
-      setIsThinking(false);
       setView("proposal");
-    }, 850);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsThinking(false);
+    }
   };
 
   const accept = () => {
