@@ -165,15 +165,26 @@ async fn import_audio(project_path: String) -> Result<Option<ImportedAudio>, Str
         else {
             return Ok(None);
         };
-        let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("audio");
-        let stem = source.file_stem().and_then(|value| value.to_str()).unwrap_or("soundtrack");
-        let destination = unique_asset_path(&project.join("assets"), &safe_folder_name(stem), extension);
+        let extension = source
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("audio");
+        let stem = source
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("soundtrack");
+        let destination =
+            unique_asset_path(&project.join("assets"), &safe_folder_name(stem), extension);
         std::fs::copy(&source, &destination)
             .map_err(|error| format!("Cannot copy soundtrack into project: {error}"))?;
         let duration = probe_duration(&destination).unwrap_or(0.0);
         Ok(Some(ImportedAudio {
             path: destination.to_string_lossy().into_owned(),
-            name: source.file_name().and_then(|value| value.to_str()).unwrap_or("Soundtrack").to_string(),
+            name: source
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("Soundtrack")
+                .to_string(),
             duration,
         }))
     })
@@ -345,7 +356,7 @@ async fn export_movie(
             Some(path)
         } else {
             None
-        }
+        };
 
         let mut filter = String::new();
         for (index, (_, trim_start, trim_end)) in inputs.iter().enumerate() {

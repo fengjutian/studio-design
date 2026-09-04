@@ -60,6 +60,10 @@ export default function App() {
 
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveSettings(settings), [settings]);
+  useEffect(() => {
+    if (!active?.localPath || !isDesktopApp()) return;
+    void invoke("allow_project_assets", { path: active.localPath }).catch((error) => showNotice(`无法载入本地素材：${String(error)}`));
+  }, [active?.localPath]);
 
   const begin = async () => {
     if (!idea.trim()) return;
@@ -440,7 +444,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
 
   const advancePreview = () => {
     const index = allShots.findIndex((shot) => shot.id === selected?.id);
-    const next = allShots[index + 1];
+    const next = allShots.slice(index + 1).find((shot) => shot.videoUrl || shot.localAssetPath);
     if (playingTimeline && next) onSelectShot(next.id);
     else {
       setPlayingTimeline(false);
@@ -470,6 +474,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
       if (result) onUpdate({ ...project, soundtrack: { id: crypto.randomUUID(), localPath: result.path, name: result.name, duration: result.duration, trimStart: 0, volume: 0.8 }, updatedAt: new Date().toISOString() });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : String(error));
+      setExportOpen(true);
     }
   };
 
@@ -530,7 +535,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
       <div className="timeline">
         <div className="timeline-heading"><span><Clock3 size={14} /> 时间线</span><div className="timeline-tools"><button onClick={() => moveSelected(-1)} disabled={!selected || allShots[0]?.id === selected.id}><ChevronLeft size={13} />前移</button><button onClick={() => moveSelected(1)} disabled={!selected || allShots[allShots.length - 1]?.id === selected.id}>后移<ChevronRight size={13} /></button><b>00:{String(totalDuration).padStart(2, "0")}</b></div></div>
         <div className="timeline-track">
-          {allShots.map((shot) => <button key={shot.id} style={{ flex: shot.duration }} className={shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shot.duration}s</i></button>)}
+          {allShots.map((shot) => <button key={shot.id} style={{ flex: shotPlaybackDuration(shot) }} className={shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shotPlaybackDuration(shot).toFixed(1)}s</i></button>)}
         </div>
         <div className="audio-track-row"><span><Music2 size={12} /> 配乐</span>{project.soundtrack ? <div className="audio-clip"><b>{project.soundtrack.name}</b><label><Volume2 size={11} /><input type="range" min="0" max="1.5" step="0.05" value={project.soundtrack.volume} onChange={(event) => onUpdate({ ...project, soundtrack: { ...project.soundtrack!, volume: Number(event.target.value) }, updatedAt: new Date().toISOString() })} /></label></div> : <button onClick={importSoundtrack}><Plus size={12} /> 导入配乐</button>}</div>
         {project.soundtrack && isDesktopApp() && <audio ref={audioRef} src={convertFileSrc(project.soundtrack.localPath)} />}

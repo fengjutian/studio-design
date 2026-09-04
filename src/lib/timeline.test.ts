@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDirectorProposal } from "./director";
-import { getTimelineShots, moveTimelineShot } from "./timeline";
+import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./timeline";
 
 describe("timeline", () => {
   it("moves a shot without changing the scene structure", () => {
@@ -15,5 +15,12 @@ describe("timeline", () => {
     const project = createDirectorProposal("海边散步");
     project.timelineOrder = project.timelineOrder?.slice(0, 2);
     expect(getTimelineShots(project)).toHaveLength(project.scenes[0].shots.length);
+  });
+
+  it("uses the selected in and out points as playback duration", () => {
+    const shot = createDirectorProposal("海边散步").scenes[0].shots[0];
+    shot.trimStart = 1.2;
+    shot.trimEnd = 3.7;
+    expect(shotPlaybackDuration(shot)).toBeCloseTo(2.5);
   });
 });
