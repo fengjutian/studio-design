@@ -18,6 +18,7 @@ export async function createProjectDirectory(project: MovieProject): Promise<Mov
     projectJson: serialized,
   });
   if (!path) return null;
+  await invoke("allow_project_assets", { path });
   const saved = { ...project, localPath: path, updatedAt: new Date().toISOString() };
   await saveProjectFile(saved);
   return saved;
@@ -27,6 +28,7 @@ export async function openProjectFile(): Promise<MovieProject | null> {
   requireDesktop();
   const result = await invoke<OpenProjectResult | null>("open_project_file");
   if (!result) return null;
+  await invoke("allow_project_assets", { path: result.path });
   const parsed = JSON.parse(result.projectJson) as MovieProject;
   validateProject(parsed);
   return { ...parsed, localPath: result.path };

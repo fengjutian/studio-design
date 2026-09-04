@@ -24,6 +24,15 @@ export async function exportMovie(project: MovieProject): Promise<string> {
   return invoke<string>("export_movie", {
     projectPath: project.localPath,
     title: project.title,
-    inputPaths: shots.map((shot) => shot.localAssetPath as string),
+    clips: shots.map((shot) => ({
+      path: shot.localAssetPath as string,
+      trimStart: shot.trimStart ?? 0,
+      trimEnd: shot.trimEnd ?? shot.duration,
+    })),
+    audio: project.soundtrack ? {
+      path: project.soundtrack.localPath,
+      trimStart: project.soundtrack.trimStart,
+      volume: project.soundtrack.volume,
+    } : null,
   });
 }

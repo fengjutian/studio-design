@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 
 const MINIMAX_API_BASE: &str = "https://api.minimax.io/v1";
 
@@ -56,6 +57,73 @@ struct VideoTaskResult {
 struct OpenProjectResult {
     path: String,
     project_json: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportClip {
+    path: String,
+    trim_start: f64,
+    trim_end: f64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportAudio {
+    path: String,
+    trim_start: f64,
+    volume: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportedAudio {
+    path: String,
+    name: String,
+    duration: f64,
+}
+
+#[tauri::command]
+fn allow_project_assets(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let project = std::fs::canonicalize(path)
+        .map_err(|error| format!("Cannot access project directory: {error}"))?;
+    if !project.join("project.json").is_file() {
+        return Err("The selected directory is not a movie project.".into());
+    }
+    app.asset_protocol_scope()
+        .allow_directory(project, true)
+        .map_err(|error| format!("Cannot allow local project media: {error}"))
+}
+
+#[tauri::command]
+async fn import_audio(project_path: String) -> Result<Option<ImportedAudio>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = std::fs::canonicalize(project_path)
+            .map_err(|error| format!("Cannot access project directory: {error}"))?;
+        if !project.join("project.json").is_file() {
+            return Err("Save the movie as a local project before importing audio.".into());
+        }
+        let Some(source) = rfd::FileDialog::new()
+            .set_title("Import soundtrack")
+            .add_filter("Audio", &["mp3", "wav", "m4a", "aac", "flac", "ogg"])
+            .pick_file()
+        else {
+            return Ok(None);
+        };
+        let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("audio");
+        let stem = source.file_stem().and_then(|value| value.to_str()).unwrap_or("soundtrack");
+        let destination = unique_asset_path(&project.join("assets"), &safe_folder_name(stem), extension);
+        std::fs::copy(&source, &destination)
+            .map_err(|error| format!("Cannot copy soundtrack into project: {error}"))?;
+        let duration = probe_duration(&destination).unwrap_or(0.0);
+        Ok(Some(ImportedAudio {
+            path: destination.to_string_lossy().into_owned(),
+            name: source.file_name().and_then(|value| value.to_str()).unwrap_or("Soundtrack").to_string(),
+            duration,
+        }))
+    })
+    .await
+    .map_err(|error| format!("Import audio task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -178,10 +246,11 @@ async fn download_generation(
 async fn export_movie(
     project_path: String,
     title: String,
-    input_paths: Vec<String>,
+    clips: Vec<ExportClip>,
+    audio: Option<ExportAudio>,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        if input_paths.is_empty() {
+        if clips.is_empty() {
             return Err("No generated shots are available for export.".into());
         }
         let project = std::fs::canonicalize(&project_path)
@@ -192,36 +261,57 @@ async fn export_movie(
         std::fs::create_dir_all(&exports)
             .map_err(|error| format!("Cannot create exports directory: {error}"))?;
 
-        let mut inputs = Vec::with_capacity(input_paths.len());
-        for input in input_paths {
-            let path = std::fs::canonicalize(input)
+        let mut inputs = Vec::with_capacity(clips.len());
+        for clip in clips {
+            let path = std::fs::canonicalize(&clip.path)
                 .map_err(|error| format!("Cannot access a timeline clip: {error}"))?;
             if !path.starts_with(&generations) || path.extension().and_then(|value| value.to_str()) != Some("mp4") {
                 return Err("Every export clip must be an MP4 from this project's generations directory.".into());
             }
-            inputs.push(path);
+            if clip.trim_start < 0.0 || clip.trim_end <= clip.trim_start {
+                return Err("A timeline clip has an invalid trim range.".into());
+            }
+            inputs.push((path, clip.trim_start, clip.trim_end));
         }
 
         let output = unique_export_path(&exports, &safe_folder_name(&title));
         let mut command = std::process::Command::new("ffmpeg");
         command.arg("-y");
-        for input in &inputs {
+        for (input, _, _) in &inputs {
             command.arg("-i").arg(input);
+        }
+        let audio_path = if let Some(track) = &audio {
+            let path = std::fs::canonicalize(&track.path)
+                .map_err(|error| format!("Cannot access soundtrack: {error}"))?;
+            if !path.starts_with(project.join("assets")) {
+                return Err("Soundtrack must be stored in this project's assets directory.".into());
+            }
+            command.arg("-i").arg(&path);
+            Some(path)
+        } else {
+            None
         }
 
         let mut filter = String::new();
-        for index in 0..inputs.len() {
+        for (index, (_, trim_start, trim_end)) in inputs.iter().enumerate() {
             filter.push_str(&format!(
-                "[{index}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,setpts=PTS-STARTPTS[v{index}];"
+                "[{index}:v:0]trim=start={trim_start}:end={trim_end},setpts=PTS-STARTPTS,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v{index}];"
             ));
         }
         for index in 0..inputs.len() {
             filter.push_str(&format!("[v{index}]"));
         }
         filter.push_str(&format!("concat=n={}:v=1:a=0[outv]", inputs.len()));
+        if let Some(track) = &audio {
+            filter.push_str(&format!(";[{}:a:0]atrim=start={},asetpts=PTS-STARTPTS,volume={}[outa]", inputs.len(), track.trim_start.max(0.0), track.volume.clamp(0.0, 2.0)));
+        }
 
+        command.args(["-filter_complex", &filter, "-map", "[outv]"]);
+        if audio_path.is_some() {
+            command.args(["-map", "[outa]", "-c:a", "aac", "-b:a", "192k", "-shortest"]);
+        }
         let result = command
-            .args(["-filter_complex", &filter, "-map", "[outv]", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart"])
+            .args(["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart"])
             .arg(&output)
             .output()
             .map_err(|error| format!("Cannot start FFmpeg. Install FFmpeg and make sure it is available on PATH: {error}"))?;
@@ -248,6 +338,39 @@ fn unique_export_path(exports: &Path, title: &str) -> PathBuf {
         }
     }
     exports.join(format!("{title}-{}.mp4", std::process::id()))
+}
+
+fn unique_asset_path(directory: &Path, stem: &str, extension: &str) -> PathBuf {
+    let initial = directory.join(format!("{stem}.{extension}"));
+    if !initial.exists() {
+        return initial;
+    }
+    for number in 2..10_000 {
+        let candidate = directory.join(format!("{stem} {number}.{extension}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    directory.join(format!("{stem}-{}.{}", std::process::id(), extension))
+}
+
+fn probe_duration(path: &Path) -> Result<f64, String> {
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .output()
+        .map_err(|error| format!("Cannot start ffprobe: {error}"))?;
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<f64>()
+        .map_err(|error| format!("Cannot read audio duration: {error}"))
 }
 
 fn safe_folder_name(title: &str) -> String {
@@ -417,6 +540,8 @@ fn parse_error(error: reqwest::Error) -> String {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            allow_project_assets,
+            import_audio,
             create_project_directory,
             open_project_file,
             save_project_file,

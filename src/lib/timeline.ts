@@ -9,6 +9,10 @@ export function getTimelineShots(project: MovieProject): Shot[] {
   return [...ordered, ...shots.filter((shot) => !known.has(shot.id))];
 }
 
+export function shotPlaybackDuration(shot: Shot) {
+  return Math.max(0.1, (shot.trimEnd ?? shot.duration) - (shot.trimStart ?? 0));
+}
+
 export function moveTimelineShot(project: MovieProject, shotId: string, direction: -1 | 1): MovieProject {
   const order = getTimelineShots(project).map((shot) => shot.id);
   const current = order.indexOf(shotId);

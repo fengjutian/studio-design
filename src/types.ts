@@ -15,6 +15,17 @@ export interface Shot {
   localAssetPath?: string;
   taskId?: string;
   generationError?: string;
+  trimStart?: number;
+  trimEnd?: number;
+}
+
+export interface AudioTrack {
+  id: string;
+  name: string;
+  localPath: string;
+  duration: number;
+  trimStart: number;
+  volume: number;
 }
 
 export interface Scene {
@@ -38,6 +49,7 @@ export interface MovieProject {
   localPath?: string;
   timelineOrder?: string[];
   lastExportPath?: string;
+  soundtrack?: AudioTrack;
 }
 
 export type ProviderKind = "mock" | "minimax";
