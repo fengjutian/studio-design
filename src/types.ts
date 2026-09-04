@@ -11,6 +11,9 @@ export interface Shot {
   duration: number;
   generationStatus: GenerationStatus;
   thumbnail?: string;
+  videoUrl?: string;
+  taskId?: string;
+  generationError?: string;
 }
 
 export interface Scene {
@@ -31,4 +34,14 @@ export interface MovieProject {
   status: ProjectStatus;
   updatedAt: string;
   scenes: Scene[];
+}
+
+export type ProviderKind = "mock" | "minimax";
+export type MiniMaxModel = "MiniMax-Hailuo-2.3" | "MiniMax-Hailuo-02" | "T2V-01-Director";
+
+export interface GenerationSettings {
+  provider: ProviderKind;
+  model: MiniMaxModel;
+  resolution: "768P" | "1080P";
+  duration: 6 | 10;
 }

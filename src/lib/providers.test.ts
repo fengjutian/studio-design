@@ -1,0 +1,13 @@
+import { describe, expect, it } from "vitest";
+import { createDirectorProposal } from "./director";
+import { buildShotPrompt } from "./providers";
+
+describe("buildShotPrompt", () => {
+  it("converts director language into a provider-ready prompt", () => {
+    const project = createDirectorProposal("少年在雨夜的上海街头奔跑");
+    const prompt = buildShotPrompt(project.scenes[0].shots[1], project);
+    expect(prompt).toContain("[Tracking shot]");
+    expect(prompt).toContain(project.visualStyle);
+    expect(prompt).toContain("no watermark");
+  });
+});
