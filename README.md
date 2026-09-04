@@ -21,6 +21,8 @@
 - MiniMax Hailuo 真实视频生成（Tauri 桌面端）
 - 生成失败提示与镜头重试
 - 本地 `.movie` 项目目录创建、打开和自动保存
+- 镜头时间线排序、导出前完整性检查
+- FFmpeg 1080p H.264 成片导出
 
 MiniMax 已通过独立 Provider 层接入，核心体验为 `Idea → Movie`。在“设置 → 电影生成引擎”中切换至 MiniMax 并输入 API Key；密钥仅保存在当前应用会话内存中。
 
@@ -36,6 +38,8 @@ MiniMax 已通过独立 Provider 层接入，核心体验为 `Idea → Movie`。
 ├── thumbnails/
 └── exports/
 ```
+
+当前粗剪导出会按照时间线顺序合并所有本地镜头，将不同尺寸的视频统一到 `1920×1080 / 30fps`，输出到项目的 `exports/` 目录。开发环境需确保 `ffmpeg` 已加入 `PATH`；发行版后续将改为随应用提供的 sidecar。
 
 ## 本地开发
 

@@ -24,7 +24,7 @@ export function createDirectorProposal(idea: string): MovieProject {
   const rainy = /雨|上海|便利店|奔跑/.test(idea);
   const title = rainy ? "雨夜" : extractTitle(idea);
 
-  return {
+  const project: MovieProject = {
     id: uid(),
     title,
     idea,
@@ -59,6 +59,8 @@ export function createDirectorProposal(idea: string): MovieProject {
       },
     ],
   };
+  project.timelineOrder = project.scenes.flatMap((scene) => scene.shots.map((item) => item.id));
+  return project;
 }
 
 function extractTitle(idea: string) {

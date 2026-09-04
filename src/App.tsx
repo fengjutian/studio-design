@@ -5,6 +5,8 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clapperboard,
   Clock3,
   Film,
@@ -21,11 +23,14 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Download,
   WandSparkles,
 } from "lucide-react";
 import { createDirectorProposal } from "./lib/director";
 import { getVideoProvider } from "./lib/providers";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
+import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
+import { getTimelineShots, moveTimelineShot } from "./lib/timeline";
 import { loadProjects, loadSettings, saveProjects, saveSettings } from "./lib/storage";
 import type { GenerationSettings, MovieProject, Shot } from "./types";
 
@@ -330,7 +335,10 @@ interface StudioProps {
 
 function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, settings, apiKey, onSaveAs }: StudioProps) {
   const [directorMode, setDirectorMode] = useState(false);
-  const allShots = project.scenes.flatMap((scene) => scene.shots);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const allShots = useMemo(() => getTimelineShots(project), [project]);
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
   const totalDuration = allShots.reduce((sum, item) => sum + item.duration, 0);
 
@@ -361,6 +369,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             generationStatus: "completed",
             taskId: result.taskId,
             videoUrl: result.videoUrl,
+            localAssetPath: result.localAssetPath,
             generationError: undefined,
           } : shot),
         })),
@@ -379,6 +388,24 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     }
   };
 
+  const moveSelected = (direction: -1 | 1) => {
+    if (!selected) return;
+    onUpdate(moveTimelineShot(project, selected.id, direction));
+  };
+
+  const runExport = async () => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const path = await exportMovie(project);
+      onUpdate({ ...project, status: "已完成", lastExportPath: path, updatedAt: new Date().toISOString() });
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="studio-view">
       <header className="studio-header workspace-header">
@@ -387,7 +414,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         <div className="save-state">{project.localPath ? <><Check size={14} /> 已保存到本地</> : <>暂存在应用中</>}</div>
         <button className="quiet-button" onClick={onSaveAs}><HardDrive size={15} /> {project.localPath ? "另存为" : "保存项目"}</button>
         <button className="quiet-button"><Play size={15} fill="currentColor" /> 预览全片</button>
-        <button className="primary-button compact">导出电影 <ArrowRight size={15} /></button>
+        <button className="primary-button compact" onClick={() => setExportOpen(true)}>导出电影 <ArrowRight size={15} /></button>
       </header>
       <div className="workspace">
         <aside className="scene-panel">
@@ -433,11 +460,34 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         </aside>
       </div>
       <div className="timeline">
-        <div className="timeline-heading"><span><Clock3 size={14} /> 时间线</span><b>00:{String(totalDuration).padStart(2, "0")}</b></div>
+        <div className="timeline-heading"><span><Clock3 size={14} /> 时间线</span><div className="timeline-tools"><button onClick={() => moveSelected(-1)} disabled={!selected || allShots[0]?.id === selected.id}><ChevronLeft size={13} />前移</button><button onClick={() => moveSelected(1)} disabled={!selected || allShots[allShots.length - 1]?.id === selected.id}>后移<ChevronRight size={13} /></button><b>00:{String(totalDuration).padStart(2, "0")}</b></div></div>
         <div className="timeline-track">
           {allShots.map((shot) => <button key={shot.id} style={{ flex: shot.duration }} className={shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shot.duration}s</i></button>)}
         </div>
       </div>
+      {exportOpen && <ExportDialog project={project} exporting={exporting} error={exportError} onExport={runExport} onClose={() => { if (!exporting) setExportOpen(false); }} />}
+    </div>
+  );
+}
+
+function ExportDialog({ project, exporting, error, onExport, onClose }: { project: MovieProject; exporting: boolean; error: string | null; onExport: () => void; onClose: () => void }) {
+  const readiness = checkExportReadiness(project);
+  const completed = Boolean(project.lastExportPath) && !error;
+  return (
+    <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
+        <div className="export-icon"><Download size={22} /></div>
+        <span className="section-number">FINAL CUT</span>
+        <h2 id="export-title">导出《{project.title}》</h2>
+        <p>按照当前时间线顺序合并镜头，输出适合播放和分享的标准电影文件。</p>
+        <div className="export-specs"><div><span>格式</span><strong>MP4 · H.264</strong></div><div><span>画面</span><strong>1920 × 1080 · 30fps</strong></div><div><span>位置</span><strong>项目 / exports</strong></div></div>
+        {!project.localPath && <div className="export-warning"><AlertCircle size={15} /><span>请先使用工作台顶部的“保存项目”选择本地位置。</span></div>}
+        {project.localPath && readiness.missingShots.length > 0 && <div className="export-warning"><AlertCircle size={15} /><span>还有 {readiness.missingShots.length} 个镜头缺少本地素材：{readiness.missingShots.slice(0, 3).join("、")}{readiness.missingShots.length > 3 ? "…" : ""}</span></div>}
+        {error && <div className="export-error"><AlertCircle size={15} /><span>{error}</span></div>}
+        {completed && <div className="export-success"><Check size={15} /><span>电影已导出到：{project.lastExportPath}</span></div>}
+        {exporting && <div className="export-progress"><span className="spinner" /><div><strong>正在完成电影…</strong><p>统一画面规格并按时间线合并镜头，请不要关闭应用。</p></div></div>}
+        <footer><button className="secondary-button" onClick={onClose} disabled={exporting}>{completed ? "完成" : "取消"}</button><button className="primary-button" onClick={onExport} disabled={!readiness.ready || exporting}>{exporting ? "正在导出" : completed ? "再次导出" : "开始导出"}<ArrowRight size={15} /></button></footer>
+      </section>
     </div>
   );
 }

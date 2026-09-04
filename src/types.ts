@@ -12,6 +12,7 @@ export interface Shot {
   generationStatus: GenerationStatus;
   thumbnail?: string;
   videoUrl?: string;
+  localAssetPath?: string;
   taskId?: string;
   generationError?: string;
 }
@@ -35,6 +36,8 @@ export interface MovieProject {
   updatedAt: string;
   scenes: Scene[];
   localPath?: string;
+  timelineOrder?: string[];
+  lastExportPath?: string;
 }
 
 export type ProviderKind = "mock" | "minimax";

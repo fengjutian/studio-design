@@ -11,6 +11,7 @@ export interface GenerateInput {
 export interface GenerateResult {
   taskId: string;
   videoUrl?: string;
+  localAssetPath?: string;
 }
 
 export interface VideoProvider {
@@ -61,7 +62,10 @@ const minimaxProvider: VideoProvider = {
       if (result.status === "Success") {
         if (!result.fileId) throw new Error("生成已完成，但 MiniMax 未返回文件 ID。");
         const videoUrl = await invoke<string>("minimax_retrieve_file", { apiKey, fileId: result.fileId });
-        return { taskId, videoUrl };
+        const localAssetPath = project.localPath
+          ? await invoke<string>("download_generation", { projectPath: project.localPath, shotId: shot.id, url: videoUrl })
+          : undefined;
+        return { taskId, videoUrl, localAssetPath };
       }
       if (result.status === "Fail") throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
     }

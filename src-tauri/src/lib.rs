@@ -59,9 +59,15 @@ struct OpenProjectResult {
 }
 
 #[tauri::command]
-async fn create_project_directory(title: String, project_json: String) -> Result<Option<String>, String> {
+async fn create_project_directory(
+    title: String,
+    project_json: String,
+) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let Some(parent) = rfd::FileDialog::new().set_title("Choose where to save the movie project").pick_folder() else {
+        let Some(parent) = rfd::FileDialog::new()
+            .set_title("Choose where to save the movie project")
+            .pick_folder()
+        else {
             return Ok(None);
         };
         let folder_name = safe_folder_name(&title);
@@ -85,7 +91,9 @@ async fn open_project_file() -> Result<Option<OpenProjectResult>, String> {
             return Ok(None);
         };
         if file.file_name().and_then(|name| name.to_str()) != Some("project.json") {
-            return Err("Please select a project.json file inside a movie project directory.".into());
+            return Err(
+                "Please select a project.json file inside a movie project directory.".into(),
+            );
         }
         let project_json = std::fs::read_to_string(&file)
             .map_err(|error| format!("Cannot read project: {error}"))?;
@@ -107,7 +115,9 @@ async fn save_project_file(path: String, project_json: String) -> Result<(), Str
     tauri::async_runtime::spawn_blocking(move || {
         let project_path = PathBuf::from(path);
         if !project_path.is_dir() {
-            return Err("Project directory does not exist. Use Save As to choose a new location.".into());
+            return Err(
+                "Project directory does not exist. Use Save As to choose a new location.".into(),
+            );
         }
         write_project_json(&project_path, &project_json)
     })
@@ -115,13 +125,147 @@ async fn save_project_file(path: String, project_json: String) -> Result<(), Str
     .map_err(|error| format!("Save project task failed: {error}"))?
 }
 
+#[tauri::command]
+async fn download_generation(
+    project_path: String,
+    shot_id: String,
+    url: String,
+) -> Result<String, String> {
+    if !url.starts_with("https://") {
+        return Err("Video download URL must use HTTPS.".into());
+    }
+    if shot_id.is_empty()
+        || !shot_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("Invalid shot ID.".into());
+    }
+    let project_path = PathBuf::from(project_path);
+    if !project_path.join("project.json").is_file() || !project_path.join("generations").is_dir() {
+        return Err("The selected directory is not a valid movie project.".into());
+    }
+    let destination = project_path
+        .join("generations")
+        .join(format!("{shot_id}.mp4"));
+    let temporary = project_path
+        .join("generations")
+        .join(format!("{shot_id}.mp4.part"));
+    let mut response = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(network_error)?
+        .error_for_status()
+        .map_err(network_error)?;
+    let mut output = std::fs::File::create(&temporary)
+        .map_err(|error| format!("Cannot create video file: {error}"))?;
+    while let Some(chunk) = response.chunk().await.map_err(network_error)? {
+        std::io::Write::write_all(&mut output, &chunk)
+            .map_err(|error| format!("Cannot write video file: {error}"))?;
+    }
+    drop(output);
+    if destination.exists() {
+        std::fs::remove_file(&destination)
+            .map_err(|error| format!("Cannot replace generated video: {error}"))?;
+    }
+    std::fs::rename(&temporary, &destination)
+        .map_err(|error| format!("Cannot finish video download: {error}"))?;
+    Ok(destination.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn export_movie(
+    project_path: String,
+    title: String,
+    input_paths: Vec<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if input_paths.is_empty() {
+            return Err("No generated shots are available for export.".into());
+        }
+        let project = std::fs::canonicalize(&project_path)
+            .map_err(|error| format!("Cannot access project directory: {error}"))?;
+        let generations = std::fs::canonicalize(project.join("generations"))
+            .map_err(|error| format!("Cannot access generations directory: {error}"))?;
+        let exports = project.join("exports");
+        std::fs::create_dir_all(&exports)
+            .map_err(|error| format!("Cannot create exports directory: {error}"))?;
+
+        let mut inputs = Vec::with_capacity(input_paths.len());
+        for input in input_paths {
+            let path = std::fs::canonicalize(input)
+                .map_err(|error| format!("Cannot access a timeline clip: {error}"))?;
+            if !path.starts_with(&generations) || path.extension().and_then(|value| value.to_str()) != Some("mp4") {
+                return Err("Every export clip must be an MP4 from this project's generations directory.".into());
+            }
+            inputs.push(path);
+        }
+
+        let output = unique_export_path(&exports, &safe_folder_name(&title));
+        let mut command = std::process::Command::new("ffmpeg");
+        command.arg("-y");
+        for input in &inputs {
+            command.arg("-i").arg(input);
+        }
+
+        let mut filter = String::new();
+        for index in 0..inputs.len() {
+            filter.push_str(&format!(
+                "[{index}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,setpts=PTS-STARTPTS[v{index}];"
+            ));
+        }
+        for index in 0..inputs.len() {
+            filter.push_str(&format!("[v{index}]"));
+        }
+        filter.push_str(&format!("concat=n={}:v=1:a=0[outv]", inputs.len()));
+
+        let result = command
+            .args(["-filter_complex", &filter, "-map", "[outv]", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart"])
+            .arg(&output)
+            .output()
+            .map_err(|error| format!("Cannot start FFmpeg. Install FFmpeg and make sure it is available on PATH: {error}"))?;
+        if !result.status.success() {
+            let details = String::from_utf8_lossy(&result.stderr);
+            let tail: String = details.chars().rev().take(900).collect::<String>().chars().rev().collect();
+            return Err(format!("FFmpeg export failed: {tail}"));
+        }
+        Ok(output.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| format!("Export task failed: {error}"))?
+}
+
+fn unique_export_path(exports: &Path, title: &str) -> PathBuf {
+    let initial = exports.join(format!("{title}.mp4"));
+    if !initial.exists() {
+        return initial;
+    }
+    for number in 2..10_000 {
+        let candidate = exports.join(format!("{title} {number}.mp4"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    exports.join(format!("{title}-{}.mp4", std::process::id()))
+}
+
 fn safe_folder_name(title: &str) -> String {
     let cleaned: String = title
         .chars()
-        .filter(|character| !matches!(character, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'))
+        .filter(|character| {
+            !matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            )
+        })
         .collect();
     let trimmed = cleaned.trim().trim_end_matches('.');
-    if trimmed.is_empty() { "Untitled movie".into() } else { trimmed.chars().take(80).collect() }
+    if trimmed.is_empty() {
+        "Untitled movie".into()
+    } else {
+        trimmed.chars().take(80).collect()
+    }
 }
 
 fn unique_project_path(parent: &Path, title: &str) -> PathBuf {
@@ -139,7 +283,8 @@ fn unique_project_path(parent: &Path, title: &str) -> PathBuf {
 }
 
 fn create_project_structure(path: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(path).map_err(|error| format!("Cannot create project directory: {error}"))?;
+    std::fs::create_dir_all(path)
+        .map_err(|error| format!("Cannot create project directory: {error}"))?;
     for directory in ["assets", "generations", "thumbnails", "exports"] {
         std::fs::create_dir_all(path.join(directory))
             .map_err(|error| format!("Cannot create {directory} directory: {error}"))?;
@@ -154,16 +299,22 @@ fn write_project_json(path: &Path, project_json: &str) -> Result<(), String> {
         .map_err(|error| format!("Cannot serialize project: {error}"))?;
     let destination = path.join("project.json");
     let temporary = path.join("project.json.tmp");
-    std::fs::write(&temporary, pretty).map_err(|error| format!("Cannot write temporary project file: {error}"))?;
+    std::fs::write(&temporary, pretty)
+        .map_err(|error| format!("Cannot write temporary project file: {error}"))?;
     if destination.exists() {
-        std::fs::remove_file(&destination).map_err(|error| format!("Cannot replace project file: {error}"))?;
+        std::fs::remove_file(&destination)
+            .map_err(|error| format!("Cannot replace project file: {error}"))?;
     }
-    std::fs::rename(&temporary, &destination).map_err(|error| format!("Cannot finish saving project: {error}"))?;
+    std::fs::rename(&temporary, &destination)
+        .map_err(|error| format!("Cannot finish saving project: {error}"))?;
     Ok(())
 }
 
 #[tauri::command]
-async fn minimax_create_video(api_key: String, request: CreateVideoRequest) -> Result<String, String> {
+async fn minimax_create_video(
+    api_key: String,
+    request: CreateVideoRequest,
+) -> Result<String, String> {
     validate_key(&api_key)?;
     if request.prompt.trim().is_empty() || request.prompt.chars().count() > 2000 {
         return Err("镜头描述必须在 1 到 2000 个字符之间。".into());
@@ -269,6 +420,8 @@ pub fn run() {
             create_project_directory,
             open_project_file,
             save_project_file,
+            download_generation,
+            export_movie,
             minimax_create_video,
             minimax_query_video,
             minimax_retrieve_file
