@@ -20,11 +20,19 @@ export interface VideoProvider {
 
 export function buildShotPrompt(shot: Shot, project: MovieProject) {
   const motion = cameraCommand(shot.movement);
+  const orderedShots = project.scenes.flatMap((scene) => scene.shots);
+  const shotIndex = orderedShots.findIndex((item) => item.id === shot.id);
+  const previousShot = shotIndex > 0 ? orderedShots[shotIndex - 1] : undefined;
+  const scene = project.scenes.find((item) => item.shots.some((candidate) => candidate.id === shot.id));
   return [
-    shot.description,
+    `PROJECT CONTINUITY BIBLE: ${project.synopsis}`,
+    `LOCKED VISUAL STYLE: ${project.visualStyle}. Keep the same character identity, face, hairstyle, age, body proportions, costume, props, architecture, weather, color palette, lighting direction, lens character and film grain across every shot. Do not redesign or replace established elements.`,
+    scene && `CURRENT SCENE: ${scene.location}; mood: ${scene.mood}.`,
+    previousShot && `CONTINUE DIRECTLY FROM PREVIOUS SHOT: ${previousShot.description}. Preserve the ending positions, screen direction, action phase, environment state and lighting continuity.`,
+    `CURRENT SHOT: ${shot.description}`,
     `Cinematic ${shot.framing}, ${project.visualStyle}.`,
     motion,
-    "Consistent subject appearance, coherent physical motion, no subtitles, no watermark.",
+    "Temporal continuity, consistent subject appearance, coherent physical motion, no jump in wardrobe or environment, no subtitles, no watermark.",
   ].filter(Boolean).join(" ");
 }
 
