@@ -109,7 +109,10 @@ async fn minimax_director_proposal(
     if idea.trim().is_empty() || idea.chars().count() > 4000 {
         return Err("The movie idea must contain between 1 and 4000 characters.".into());
     }
-    if !matches!(model.as_str(), "MiniMax-M2.7" | "MiniMax-M2.7-highspeed") {
+    if !matches!(
+        model.as_str(),
+        "MiniMax-M3" | "MiniMax-M2.7" | "MiniMax-M2.7-highspeed"
+    ) {
         return Err("Unsupported AI director model.".into());
     }
     let system = r#"You are the behind-the-scenes director for a Chinese AI filmmaking desktop application. Turn the user's idea into a concise, filmable short movie plan. Return only valid JSON, with no Markdown. Schema: {"title":string,"synopsis":string,"visualStyle":string,"scenes":[{"title":string,"location":string,"mood":string,"shots":[{"title":string,"description":string,"framing":string,"movement":string,"duration":number}]}]}. Use Chinese. Create 1-5 scenes and 3-12 shots total. Each shot must be visually specific, continuous with adjacent shots, and 2-10 seconds long. framing and movement should be understandable Chinese film terms."#;

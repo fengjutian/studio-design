@@ -39,7 +39,7 @@ import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./lib/
 import { loadProjects, loadSettings, saveProjects, saveSettings } from "./lib/storage";
 import type { GenerationSettings, MovieProject, Shot } from "./types";
 
-type View = "home" | "proposal" | "studio" | "settings";
+type View = "home" | "movies" | "assets" | "proposal" | "studio" | "settings";
 
 const prompts = [
   "一封迟到了十年的信，在海边小镇找到收件人",
@@ -88,9 +88,9 @@ export default function App() {
     setView("studio");
   };
 
-  const openProject = (project: MovieProject) => {
+  const openProject = (project: MovieProject, shotId?: string) => {
     setActive(project);
-    setSelectedShotId(project.scenes[0]?.shots[0]?.id ?? null);
+    setSelectedShotId(shotId ?? project.scenes[0]?.shots[0]?.id ?? null);
     setView("studio");
   };
 
@@ -137,7 +137,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppRail view={view} onHome={goHome} onSettings={() => setView("settings")} />
+      <AppRail view={view} onHome={goHome} onMovies={() => setView("movies")} onAssets={() => setView("assets")} onSettings={() => setView("settings")} />
       <main className="main-stage">
         {view === "home" && (
           <HomeView
@@ -154,6 +154,8 @@ export default function App() {
         {view === "proposal" && active && (
           <ProposalView project={active} onBack={goHome} onAccept={accept} />
         )}
+        {view === "movies" && <MoviesView projects={projects} onOpen={openProject} onOpenFile={openLocalProject} />}
+        {view === "assets" && <AssetsView projects={projects} onOpen={openProject} />}
         {view === "studio" && active && (
           <StudioView
             project={active}
@@ -175,7 +177,7 @@ export default function App() {
   );
 }
 
-function AppRail({ view, onHome, onSettings }: { view: View; onHome: () => void; onSettings: () => void }) {
+function AppRail({ view, onHome, onMovies, onAssets, onSettings }: { view: View; onHome: () => void; onMovies: () => void; onAssets: () => void; onSettings: () => void }) {
   return (
     <aside className="app-rail">
       <button className="brand-mark" onClick={onHome} aria-label="返回首页">
@@ -186,11 +188,11 @@ function AppRail({ view, onHome, onSettings }: { view: View; onHome: () => void;
           <Home size={19} />
           <span>首页</span>
         </button>
-        <button className="rail-button">
+        <button className={view === "movies" ? "rail-button active" : "rail-button"} onClick={onMovies}>
           <Film size={19} />
           <span>电影</span>
         </button>
-        <button className="rail-button">
+        <button className={view === "assets" ? "rail-button active" : "rail-button"} onClick={onAssets}>
           <Layers3 size={19} />
           <span>素材</span>
         </button>
@@ -200,6 +202,59 @@ function AppRail({ view, onHome, onSettings }: { view: View; onHome: () => void;
         <span>设置</span>
       </button>
     </aside>
+  );
+}
+
+function LibraryHeader({ title, eyebrow, action }: { title: string; eyebrow: string; action?: React.ReactNode }) {
+  return (
+    <header className="topbar library-topbar">
+      <div className="wordmark"><span>{title}</span><i>{eyebrow}</i></div>
+      {action}
+    </header>
+  );
+}
+
+function MoviesView({ projects, onOpen, onOpenFile }: { projects: MovieProject[]; onOpen: (project: MovieProject) => void; onOpenFile: () => void }) {
+  return (
+    <div className="library-view">
+      <LibraryHeader title="电影" eyebrow="YOUR FILMS" action={<button className="quiet-button" onClick={onOpenFile}><FolderOpen size={16} /> 打开项目</button>} />
+      <section className="library-content">
+        <div className="library-heading"><div><span>FILM LIBRARY</span><h1>全部电影</h1></div><p>{projects.length} 个项目</p></div>
+        {projects.length === 0 ? (
+          <div className="library-empty"><Film size={34} /><h2>还没有电影项目</h2><p>回到首页输入一个创意，或打开已有的本地项目。</p></div>
+        ) : (
+          <div className="movie-library-grid">
+            {projects.map((project) => {
+              const shots = project.scenes.flatMap((scene) => scene.shots);
+              const completed = shots.filter((shot) => shot.generationStatus === "completed").length;
+              return <button className="movie-library-card" key={project.id} onClick={() => onOpen(project)}><div className="movie-cover"><span>{project.title.slice(0, 1)}</span><Play size={25} fill="currentColor" /></div><div><span className="card-kicker">{project.status}</span><h2>《{project.title}》</h2><p>{project.scenes.length} 个场景 · {shots.length} 个镜头 · {completed} 个已生成</p><small>{project.synopsis}</small></div><ArrowRight size={18} /></button>;
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function AssetsView({ projects, onOpen }: { projects: MovieProject[]; onOpen: (project: MovieProject, shotId?: string) => void }) {
+  const assets = projects.flatMap((project) => project.scenes.flatMap((scene) => scene.shots.filter((shot) => shot.videoUrl || shot.localAssetPath).map((shot) => ({ project, scene, shot }))));
+  return (
+    <div className="library-view">
+      <LibraryHeader title="素材" eyebrow="MEDIA LIBRARY" />
+      <section className="library-content">
+        <div className="library-heading"><div><span>GENERATED MEDIA</span><h1>镜头素材</h1></div><p>{assets.length} 个视频</p></div>
+        {assets.length === 0 ? (
+          <div className="library-empty"><Layers3 size={34} /><h2>还没有可用素材</h2><p>进入电影工作台生成镜头后，视频会自动汇总到这里。</p></div>
+        ) : (
+          <div className="asset-grid">
+            {assets.map(({ project, scene, shot }) => {
+              const source = shot.videoUrl ?? (shot.localAssetPath && isDesktopApp() ? convertFileSrc(shot.localAssetPath) : undefined);
+              return <button className="asset-card" key={`${project.id}-${shot.id}`} onClick={() => onOpen(project, shot.id)}>{source ? <video src={source} muted preload="metadata" /> : <div className="asset-placeholder"><Film size={28} /></div>}<div><span>{project.title} · 场景 {scene.number}</span><h2>{String(shot.number).padStart(2, "0")} {shot.title}</h2><p>{shot.framing} · {shot.duration} 秒</p></div></button>;
+            })}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -591,7 +646,7 @@ function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: Settin
             <button className={settings.directorProvider === "local" ? "provider-option active" : "provider-option"} onClick={() => set("directorProvider", "local")}><span className="provider-radio" /><div><strong>本地导演</strong><p>即时生成固定结构，不联网、不产生费用。</p></div><i>体验</i></button>
             <button className={settings.directorProvider === "minimax" ? "provider-option active" : "provider-option"} onClick={() => set("directorProvider", "minimax")}><span className="provider-radio" /><div><strong>MiniMax AI 导演</strong><p>理解任意创意，生成连贯的多场景分镜。</p></div><i>智能</i></button>
           </div>
-          {settings.directorProvider === "minimax" && <div className="inline-setting"><label><span>导演模型</span><select value={settings.directorModel} onChange={(event) => set("directorModel", event.target.value as GenerationSettings["directorModel"])}><option>MiniMax-M2.7</option><option>MiniMax-M2.7-highspeed</option></select></label><p>与视频引擎共用下方 API Key。</p></div>}
+          {settings.directorProvider === "minimax" && <div className="inline-setting"><label><span>导演模型</span><select value={settings.directorModel} onChange={(event) => set("directorModel", event.target.value as GenerationSettings["directorModel"])}><option>MiniMax-M3</option><option>MiniMax-M2.7</option><option>MiniMax-M2.7-highspeed</option></select></label><p>与视频引擎共用下方 API Key。</p></div>}
         </section>
         <section className="settings-card">
           <div className="settings-card-title"><Sparkles size={19} /><div><h3>生成服务</h3><p>控制镜头由模拟引擎还是真实模型生成。</p></div></div>

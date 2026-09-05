@@ -6,7 +6,7 @@ const SETTINGS_KEY = "director-studio-settings-v1";
 export const defaultSettings: GenerationSettings = {
   provider: "mock",
   directorProvider: "local",
-  directorModel: "MiniMax-M2.7",
+  directorModel: "MiniMax-M3",
   model: "MiniMax-Hailuo-2.3",
   resolution: "768P",
   duration: 6,
