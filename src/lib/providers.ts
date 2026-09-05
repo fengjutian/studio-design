@@ -28,6 +28,10 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
   ].filter(Boolean).join(" ");
 }
 
+export function supportedVideoDuration(shotDuration: number): 6 | 10 {
+  return shotDuration <= 6 ? 6 : 10;
+}
+
 export function getVideoProvider(settings: GenerationSettings): VideoProvider {
   return settings.provider === "minimax" ? minimaxProvider : mockProvider;
 }
@@ -51,7 +55,7 @@ const minimaxProvider: VideoProvider = {
       request: {
         model: settings.model,
         prompt: buildShotPrompt(shot, project),
-        duration: settings.duration,
+        duration: supportedVideoDuration(shot.duration),
         resolution: settings.resolution,
       },
     });

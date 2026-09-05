@@ -32,7 +32,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { developIdea, expandIdea } from "./lib/aiDirector";
-import { getVideoProvider } from "./lib/providers";
+import { getVideoProvider, supportedVideoDuration } from "./lib/providers";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
 import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./lib/timeline";
@@ -483,7 +483,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             videoUrl: result.videoUrl,
             localAssetPath: result.localAssetPath,
             trimStart: 0,
-            trimEnd: settings.duration,
+            trimEnd: selected.duration,
             generationError: undefined,
           } : shot),
         })),
@@ -594,7 +594,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             ) : selected?.generationStatus === "failed" ? (
               <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={generate}><RotateCcw size={16} /> 再试一次</button></div>
             ) : (
-              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>确认右侧的导演意图，然后生成这个镜头。</p><button className="primary-button" onClick={generate}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · ${settings.duration} 秒`}</small></div>
+              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>确认右侧的导演意图，然后生成这个镜头。</p><button className="primary-button" onClick={generate}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
             )}
           </div>
           {selected?.generationStatus === "completed" && selectedSource && <div className="trim-editor"><span><Scissors size={13} /> 裁剪</span><label>入点 <input type="range" min={0} max={Math.max(.2, (selected.trimEnd ?? selected.duration) - .1)} step="0.1" value={selected.trimStart ?? 0} onChange={(event) => updateTrim("trimStart", Number(event.target.value))} /><b>{(selected.trimStart ?? 0).toFixed(1)}s</b></label><label>出点 <input type="range" min={Math.min(selected.duration - .1, (selected.trimStart ?? 0) + .1)} max={selected.duration} step="0.1" value={selected.trimEnd ?? selected.duration} onChange={(event) => updateTrim("trimEnd", Number(event.target.value))} /><b>{(selected.trimEnd ?? selected.duration).toFixed(1)}s</b></label></div>}

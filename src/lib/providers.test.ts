@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDirectorProposal } from "./director";
-import { buildShotPrompt } from "./providers";
+import { buildShotPrompt, supportedVideoDuration } from "./providers";
 
 describe("buildShotPrompt", () => {
   it("converts director language into a provider-ready prompt", () => {
@@ -9,5 +9,14 @@ describe("buildShotPrompt", () => {
     expect(prompt).toContain("[Tracking shot]");
     expect(prompt).toContain(project.visualStyle);
     expect(prompt).toContain("no watermark");
+  });
+});
+
+describe("supportedVideoDuration", () => {
+  it("uses the shortest MiniMax duration that covers the planned shot", () => {
+    expect(supportedVideoDuration(4)).toBe(6);
+    expect(supportedVideoDuration(6)).toBe(6);
+    expect(supportedVideoDuration(7)).toBe(10);
+    expect(supportedVideoDuration(10)).toBe(10);
   });
 });
