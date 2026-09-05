@@ -354,8 +354,11 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const [playingTimeline, setPlayingTimeline] = useState(false);
   const [activeGenerationId, setActiveGenerationId] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState("正在提交生成任务…");
+  const [timelinePanning, setTimelinePanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const timelineDragRef = useRef<{ pointerId: number; startX: number; scrollLeft: number } | null>(null);
   const allShots = useMemo(() => getTimelineShots(project), [project]);
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
   const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
@@ -485,6 +488,34 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     onUpdate({ ...project, scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, trimStart: start, trimEnd: end } : shot) })), updatedAt: new Date().toISOString() });
   };
 
+  const startTimelinePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button, input, label")) return;
+    timelineDragRef.current = { pointerId: event.pointerId, startX: event.clientX, scrollLeft: event.currentTarget.scrollLeft };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setTimelinePanning(true);
+  };
+
+  const moveTimelinePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = timelineDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.currentTarget.scrollLeft = drag.scrollLeft - (event.clientX - drag.startX);
+  };
+
+  const stopTimelinePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (timelineDragRef.current?.pointerId !== event.pointerId) return;
+    timelineDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setTimelinePanning(false);
+  };
+
+  const scrollTimeline = (event: React.WheelEvent<HTMLDivElement>) => {
+    const container = timelineScrollRef.current;
+    if (!container || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
+    if (container.scrollWidth <= container.clientWidth) return;
+    event.preventDefault();
+    container.scrollLeft += event.deltaY;
+  };
+
   const importSoundtrack = async () => {
     if (!project.localPath) { onSaveAs(); return; }
     try {
@@ -559,7 +590,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         </header>
         <div className="timeline-editor">
           <div className="track-labels"><div className="ruler-corner">TC</div><div className="track-label"><Film size={13} /><span><b>V1</b> 主画面</span></div><div className="track-label"><Music2 size={13} /><span><b>A1</b> 配乐</span></div></div>
-          <div className="timeline-scroll">
+          <div ref={timelineScrollRef} className={timelinePanning ? "timeline-scroll is-panning" : "timeline-scroll"} title="滚轮或拖动空白区域可横向浏览" onWheel={scrollTimeline} onPointerDown={startTimelinePan} onPointerMove={moveTimelinePan} onPointerUp={stopTimelinePan} onPointerCancel={stopTimelinePan}>
             <div className="time-ruler">{Array.from({ length: Math.max(2, Math.ceil(totalDuration / 5) + 1) }, (_, index) => <span key={index} style={{ left: `${Math.min(100, (index * 5 / Math.max(totalDuration, 1)) * 100)}%` }}>{formatTimecode(index * 5)}</span>)}</div>
             <div className="timeline-track">
               {allShots.map((shot) => <button key={shot.id} style={{ width: `${Math.max(92, shotPlaybackDuration(shot) * 34)}px` }} className={`${shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} status-${shot.generationStatus}`} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shotPlaybackDuration(shot).toFixed(1)}s</i></button>)}
