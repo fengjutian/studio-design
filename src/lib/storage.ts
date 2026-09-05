@@ -2,6 +2,8 @@ import type { GenerationSettings, MovieProject } from "../types";
 
 const KEY = "director-studio-projects-v1";
 const SETTINGS_KEY = "director-studio-settings-v1";
+const IDEA_DRAFT_KEY = "director-studio-idea-draft-v1";
+const MINIMAX_API_KEY = "director-studio-minimax-api-key-v1";
 
 export const defaultSettings: GenerationSettings = {
   provider: "mock",
@@ -34,4 +36,21 @@ export function loadSettings(): GenerationSettings {
 
 export function saveSettings(settings: GenerationSettings) {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+export function loadIdeaDraft(): string {
+  return localStorage.getItem(IDEA_DRAFT_KEY) ?? "";
+}
+
+export function saveIdeaDraft(idea: string) {
+  localStorage.setItem(IDEA_DRAFT_KEY, idea);
+}
+
+export function loadApiKey(): string {
+  return localStorage.getItem(MINIMAX_API_KEY) ?? "";
+}
+
+export function saveApiKey(apiKey: string) {
+  if (apiKey.trim()) localStorage.setItem(MINIMAX_API_KEY, apiKey.trim());
+  else localStorage.removeItem(MINIMAX_API_KEY);
 }

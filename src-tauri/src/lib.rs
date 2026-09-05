@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-const MINIMAX_API_BASE: &str = "https://api.minimax.io/v1";
+const MINIMAX_API_BASE: &str = "https://api.minimaxi.com/v1";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +181,25 @@ async fn minimax_expand_idea(
         .next()
         .map(|choice| choice.message.content)
         .ok_or_else(|| "AI prompt expansion returned no content.".into())
+}
+
+#[tauri::command]
+async fn minimax_test_connection(api_key: String) -> Result<String, String> {
+    validate_key(&api_key)?;
+    let response = client()
+        .get(format!("{MINIMAX_API_BASE}/models"))
+        .bearer_auth(api_key.trim())
+        .send()
+        .await
+        .map_err(network_error)?;
+    let status = response.status();
+    if status.is_success() {
+        Ok("连接成功，API Key 有效。".into())
+    } else if status.as_u16() == 401 || status.as_u16() == 403 {
+        Err("认证失败，请检查 API Key 是否正确或仍然有效。".into())
+    } else {
+        Err(format!("MiniMax 接口返回 HTTP {status}，请稍后重试。"))
+    }
 }
 
 #[tauri::command]
@@ -660,6 +679,7 @@ pub fn run() {
             export_movie,
             minimax_director_proposal,
             minimax_expand_idea,
+            minimax_test_connection,
             minimax_create_video,
             minimax_query_video,
             minimax_retrieve_file

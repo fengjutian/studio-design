@@ -36,7 +36,7 @@ import { getVideoProvider } from "./lib/providers";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
 import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./lib/timeline";
-import { loadProjects, loadSettings, saveProjects, saveSettings } from "./lib/storage";
+import { loadApiKey, loadIdeaDraft, loadProjects, loadSettings, saveApiKey, saveIdeaDraft, saveProjects, saveSettings } from "./lib/storage";
 import type { GenerationSettings, MovieProject, Shot } from "./types";
 
 type View = "home" | "movies" | "assets" | "proposal" | "studio" | "settings";
@@ -50,17 +50,19 @@ const prompts = [
 export default function App() {
   const [projects, setProjects] = useState<MovieProject[]>(loadProjects);
   const [active, setActive] = useState<MovieProject | null>(null);
-  const [idea, setIdea] = useState("");
+  const [idea, setIdea] = useState(loadIdeaDraft);
   const [view, setView] = useState<View>("home");
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [isExpanding, setIsExpanding] = useState(false);
   const [settings, setSettings] = useState<GenerationSettings>(loadSettings);
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(loadApiKey);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveSettings(settings), [settings]);
+  useEffect(() => saveIdeaDraft(idea), [idea]);
+  useEffect(() => saveApiKey(apiKey), [apiKey]);
   useEffect(() => {
     if (!active?.localPath || !isDesktopApp()) return;
     void invoke("allow_project_assets", { path: active.localPath }).catch((error) => showNotice(`无法载入本地素材：${String(error)}`));
@@ -122,7 +124,6 @@ export default function App() {
   const goHome = () => {
     setView("home");
     setActive(null);
-    setIdea("");
   };
 
   const updateProject = (next: MovieProject) => {
@@ -304,7 +305,7 @@ function HomeView({ idea, projects, isThinking, isExpanding, onIdea, onBegin, on
         <p className="hero-copy">你负责想象，AI 负责执行。<br />从一个想法，开始你的下一部电影。</p>
 
         <div className={idea ? "idea-composer has-content" : "idea-composer"}>
-          <button className="expand-idea-button" onClick={onExpand} disabled={!idea.trim() || isThinking || isExpanding} title="使用当前 AI 导演模型扩写创意">
+          <button type="button" className="expand-idea-button" onClick={onExpand} disabled={!idea.trim() || isThinking || isExpanding} title="使用当前 AI 导演模型扩写创意">
             {isExpanding ? <span className="mini-spinner" /> : <Sparkles size={14} />}
             {isExpanding ? "正在扩写" : "AI 扩写"}
           </button>
@@ -320,7 +321,7 @@ function HomeView({ idea, projects, isThinking, isExpanding, onIdea, onBegin, on
           />
           <div className="composer-footer">
             <span><WandSparkles size={15} /> 说出故事、画面或一种感觉</span>
-            <button className="primary-button" onClick={onBegin} disabled={!idea.trim() || isThinking || isExpanding}>
+            <button type="button" className="primary-button" onClick={onBegin} disabled={!idea.trim() || isThinking || isExpanding}>
               {isThinking ? <span className="spinner" /> : <Clapperboard size={17} />}
               {isThinking ? "正在构思" : "开始创作电影"}
               {!isThinking && <ArrowRight size={16} />}
@@ -653,7 +654,29 @@ interface SettingsProps {
 }
 
 function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: SettingsProps) {
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<{ ok: boolean; message: string } | null>(null);
   const set = <K extends keyof GenerationSettings>(key: K, value: GenerationSettings[K]) => onSettings({ ...settings, [key]: value });
+  const testConnection = async () => {
+    if (!apiKey.trim()) {
+      setConnectionResult({ ok: false, message: "请先填写 API Key。" });
+      return;
+    }
+    if (!isDesktopApp()) {
+      setConnectionResult({ ok: false, message: "接口测试需要在 Tauri 桌面应用中运行。" });
+      return;
+    }
+    setTestingConnection(true);
+    setConnectionResult(null);
+    try {
+      const message = await invoke<string>("minimax_test_connection", { apiKey });
+      setConnectionResult({ ok: true, message });
+    } catch (error) {
+      setConnectionResult({ ok: false, message: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
   return (
     <div className="settings-view">
       <header className="studio-header">
@@ -683,9 +706,9 @@ function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: Settin
         </section>
 
         <section className={settings.provider === "minimax" || settings.directorProvider === "minimax" ? "settings-card" : "settings-card disabled-card"}>
-          <div className="settings-card-title"><KeyRound size={19} /><div><h3>MiniMax 连接</h3><p>密钥只在应用运行期间保存在内存中，关闭后自动清除。</p></div></div>
+          <div className="settings-card-title"><KeyRound size={19} /><div><h3>MiniMax 国内连接</h3><p>连接国内开放平台 api.minimaxi.com；密钥保存在当前设备的应用存储中。</p></div></div>
           <div className="settings-form">
-            <label className="wide-field"><span>API Key</span><input type="password" value={apiKey} disabled={settings.provider !== "minimax" && settings.directorProvider !== "minimax"} onChange={(event) => onApiKey(event.target.value)} placeholder="输入 MiniMax API Key" /><small><ShieldCheck size={12} /> 不写入项目文件或浏览器存储</small></label>
+            <label className="wide-field"><span>API Key</span><div className="api-key-row"><input type="password" value={apiKey} disabled={settings.provider !== "minimax" && settings.directorProvider !== "minimax"} onChange={(event) => { onApiKey(event.target.value); setConnectionResult(null); }} placeholder="输入 MiniMax API Key" /><button type="button" className="secondary-button test-api-button" onClick={testConnection} disabled={!apiKey.trim() || testingConnection}>{testingConnection ? <span className="mini-spinner" /> : <Check size={14} />}{testingConnection ? "测试中" : "测试连接"}</button></div><small><ShieldCheck size={12} /> 保存在本机应用存储中，不写入电影项目；本地存储未加密</small>{connectionResult && <small className={connectionResult.ok ? "connection-result success" : "connection-result error"}>{connectionResult.ok ? <Check size={12} /> : <AlertCircle size={12} />}{connectionResult.message}</small>}</label>
             <label><span>视频模型</span><select value={settings.model} disabled={settings.provider !== "minimax"} onChange={(event) => set("model", event.target.value as GenerationSettings["model"])}><option>MiniMax-Hailuo-2.3</option><option>MiniMax-Hailuo-02</option><option>T2V-01-Director</option></select></label>
             <label><span>分辨率</span><select value={settings.resolution} disabled={settings.provider !== "minimax"} onChange={(event) => set("resolution", event.target.value as GenerationSettings["resolution"])}><option>768P</option><option>1080P</option></select></label>
             <label><span>单镜头时长</span><select value={settings.duration} disabled={settings.provider !== "minimax"} onChange={(event) => set("duration", Number(event.target.value) as 6 | 10)}><option value={6}>6 秒</option><option value={10}>10 秒</option></select></label>
