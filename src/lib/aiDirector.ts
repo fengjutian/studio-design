@@ -11,6 +11,25 @@ export async function developIdea(idea: string, settings: GenerationSettings, ap
   return createProjectFromDirectorResponse(idea, parseDirectorJson(content));
 }
 
+export async function expandIdea(idea: string, settings: GenerationSettings, apiKey: string): Promise<string> {
+  if (!idea.trim()) throw new Error("请先写下一句电影创意。");
+  if (settings.directorProvider !== "minimax") throw new Error("请先在设置中启用 MiniMax AI 导演。");
+  if (!apiKey.trim()) throw new Error("请先在设置中填写 MiniMax API Key。");
+  if (!isDesktopApp()) throw new Error("AI 扩写只能在 Tauri 桌面应用中运行。");
+  const content = await invoke<string>("minimax_expand_idea", { apiKey, idea: idea.trim(), model: settings.directorModel });
+  return cleanExpandedIdea(content);
+}
+
+export function cleanExpandedIdea(content: string): string {
+  const result = content
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*|\s*```$/gi, "")
+    .trim();
+  if (!result) throw new Error("AI 没有返回扩写内容，请再试一次。");
+  return result;
+}
+
 export function parseDirectorJson(content: string): DirectorResponse {
   const withoutThinking = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   const fenced = withoutThinking.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];

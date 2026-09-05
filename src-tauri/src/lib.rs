@@ -142,6 +142,48 @@ async fn minimax_director_proposal(
 }
 
 #[tauri::command]
+async fn minimax_expand_idea(
+    api_key: String,
+    idea: String,
+    model: String,
+) -> Result<String, String> {
+    validate_key(&api_key)?;
+    if idea.trim().is_empty() || idea.chars().count() > 4000 {
+        return Err("The movie idea must contain between 1 and 4000 characters.".into());
+    }
+    if !matches!(
+        model.as_str(),
+        "MiniMax-M3" | "MiniMax-M2.7" | "MiniMax-M2.7-highspeed"
+    ) {
+        return Err("Unsupported AI director model.".into());
+    }
+    let system = r#"You are a Chinese film creative assistant. Expand the user's rough idea into one vivid, coherent and filmable movie prompt. Preserve the core premise. Include protagonist, dramatic goal, conflict, setting, atmosphere, visual style and a compelling turn. Write one compact Chinese paragraph of 120-220 Chinese characters. Return only the expanded prompt, with no title, explanation, Markdown or JSON."#;
+    let response = client()
+        .post(format!("{MINIMAX_API_BASE}/chat/completions"))
+        .bearer_auth(api_key.trim())
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "name": "Director Studio", "content": system},
+                {"role": "user", "name": "Director", "content": idea}
+            ],
+            "temperature": 0.9,
+            "max_completion_tokens": 800
+        }))
+        .send()
+        .await
+        .map_err(network_error)?;
+    let status = response.status();
+    let body: ChatCompletionResponse = response.json().await.map_err(parse_error)?;
+    ensure_success(status, &body.base_resp)?;
+    body.choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content)
+        .ok_or_else(|| "AI prompt expansion returned no content.".into())
+}
+
+#[tauri::command]
 fn allow_project_assets(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let project = std::fs::canonicalize(path)
         .map_err(|error| format!("Cannot access project directory: {error}"))?;
@@ -617,6 +659,7 @@ pub fn run() {
             download_generation,
             export_movie,
             minimax_director_proposal,
+            minimax_expand_idea,
             minimax_create_video,
             minimax_query_video,
             minimax_retrieve_file

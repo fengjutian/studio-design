@@ -31,7 +31,7 @@ import {
   WandSparkles,
   Volume2,
 } from "lucide-react";
-import { developIdea } from "./lib/aiDirector";
+import { developIdea, expandIdea } from "./lib/aiDirector";
 import { getVideoProvider } from "./lib/providers";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
@@ -54,6 +54,7 @@ export default function App() {
   const [view, setView] = useState<View>("home");
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
+  const [isExpanding, setIsExpanding] = useState(false);
   const [settings, setSettings] = useState<GenerationSettings>(loadSettings);
   const [apiKey, setApiKey] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -76,6 +77,19 @@ export default function App() {
       showNotice(error instanceof Error ? error.message : String(error));
     } finally {
       setIsThinking(false);
+    }
+  };
+
+  const expandPrompt = async () => {
+    if (!idea.trim() || isExpanding) return;
+    setIsExpanding(true);
+    try {
+      setIdea(await expandIdea(idea, settings, apiKey));
+      showNotice("AI 已完成扩写，你可以继续修改或直接开始创作。", 2600);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsExpanding(false);
     }
   };
 
@@ -144,8 +158,10 @@ export default function App() {
             idea={idea}
             projects={projects}
             isThinking={isThinking}
+            isExpanding={isExpanding}
             onIdea={setIdea}
             onBegin={begin}
+            onExpand={expandPrompt}
             onPrompt={setIdea}
             onOpen={openProject}
             onOpenFile={openLocalProject}
@@ -262,14 +278,16 @@ interface HomeProps {
   idea: string;
   projects: MovieProject[];
   isThinking: boolean;
+  isExpanding: boolean;
   onIdea: (value: string) => void;
   onBegin: () => void;
+  onExpand: () => void;
   onPrompt: (value: string) => void;
   onOpen: (project: MovieProject) => void;
   onOpenFile: () => void;
 }
 
-function HomeView({ idea, projects, isThinking, onIdea, onBegin, onPrompt, onOpen, onOpenFile }: HomeProps) {
+function HomeView({ idea, projects, isThinking, isExpanding, onIdea, onBegin, onExpand, onPrompt, onOpen, onOpenFile }: HomeProps) {
   return (
     <div className="home-view">
       <header className="topbar">
@@ -286,6 +304,10 @@ function HomeView({ idea, projects, isThinking, onIdea, onBegin, onPrompt, onOpe
         <p className="hero-copy">你负责想象，AI 负责执行。<br />从一个想法，开始你的下一部电影。</p>
 
         <div className={idea ? "idea-composer has-content" : "idea-composer"}>
+          <button className="expand-idea-button" onClick={onExpand} disabled={!idea.trim() || isThinking || isExpanding} title="使用当前 AI 导演模型扩写创意">
+            {isExpanding ? <span className="mini-spinner" /> : <Sparkles size={14} />}
+            {isExpanding ? "正在扩写" : "AI 扩写"}
+          </button>
           <textarea
             value={idea}
             onChange={(event) => onIdea(event.target.value)}
@@ -298,7 +320,7 @@ function HomeView({ idea, projects, isThinking, onIdea, onBegin, onPrompt, onOpe
           />
           <div className="composer-footer">
             <span><WandSparkles size={15} /> 说出故事、画面或一种感觉</span>
-            <button className="primary-button" onClick={onBegin} disabled={!idea.trim() || isThinking}>
+            <button className="primary-button" onClick={onBegin} disabled={!idea.trim() || isThinking || isExpanding}>
               {isThinking ? <span className="spinner" /> : <Clapperboard size={17} />}
               {isThinking ? "正在构思" : "开始创作电影"}
               {!isThinking && <ArrowRight size={16} />}
