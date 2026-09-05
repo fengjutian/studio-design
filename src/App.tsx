@@ -13,9 +13,7 @@ import {
   Film,
   FolderOpen,
   HardDrive,
-  Home,
   KeyRound,
-  Layers3,
   MessageCircleMore,
   MoreHorizontal,
   Music2,
@@ -24,22 +22,23 @@ import {
   Plus,
   RotateCcw,
   Scissors,
-  Settings,
   ShieldCheck,
   Sparkles,
   Download,
   WandSparkles,
   Volume2,
-} from "lucide-react";
-import { developIdea, expandIdea } from "./lib/aiDirector";
-import { getVideoProvider, supportedVideoDuration } from "./lib/providers";
-import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "./lib/projectFiles";
+} from "@/components/icons";
+import { Button } from "@/components/ui/button";
+import { developIdea, expandIdea } from "@/features/director";
+import { getVideoProvider, supportedVideoDuration } from "@/features/generation";
+import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "@/features/projects";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
-import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./lib/timeline";
-import { loadApiKey, loadIdeaDraft, loadProjects, loadSettings, saveApiKey, saveIdeaDraft, saveProjects, saveSettings } from "./lib/storage";
-import type { GenerationSettings, MovieProject, Shot } from "./types";
-
-type View = "home" | "movies" | "assets" | "proposal" | "studio" | "settings";
+import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "@/features/timeline";
+import { loadApiKey, loadIdeaDraft, loadProjects, loadSettings, saveApiKey, saveIdeaDraft, saveProjects, saveSettings } from "@/features/projects";
+import type { GenerationSettings, MovieProject, Shot } from "@/domain/movie";
+import type { AppView as View } from "@/app/navigation";
+import { AppRail } from "@/app/AppRail";
+import { AssetsView, MoviesView } from "@/features/library";
 
 const prompts = [
   "一封迟到了十年的信，在海边小镇找到收件人",
@@ -194,87 +193,6 @@ export default function App() {
   );
 }
 
-function AppRail({ view, onHome, onMovies, onAssets, onSettings }: { view: View; onHome: () => void; onMovies: () => void; onAssets: () => void; onSettings: () => void }) {
-  return (
-    <aside className="app-rail">
-      <button className="brand-mark" onClick={onHome} aria-label="返回首页">
-        <Clapperboard size={22} strokeWidth={1.8} />
-      </button>
-      <nav>
-        <button className={view === "home" ? "rail-button active" : "rail-button"} onClick={onHome}>
-          <Home size={19} />
-          <span>首页</span>
-        </button>
-        <button className={view === "movies" ? "rail-button active" : "rail-button"} onClick={onMovies}>
-          <Film size={19} />
-          <span>电影</span>
-        </button>
-        <button className={view === "assets" ? "rail-button active" : "rail-button"} onClick={onAssets}>
-          <Layers3 size={19} />
-          <span>素材</span>
-        </button>
-      </nav>
-      <button className={view === "settings" ? "rail-button settings-button active" : "rail-button settings-button"} onClick={onSettings}>
-        <Settings size={19} />
-        <span>设置</span>
-      </button>
-    </aside>
-  );
-}
-
-function LibraryHeader({ title, eyebrow, action }: { title: string; eyebrow: string; action?: React.ReactNode }) {
-  return (
-    <header className="topbar library-topbar">
-      <div className="wordmark"><span>{title}</span><i>{eyebrow}</i></div>
-      {action}
-    </header>
-  );
-}
-
-function MoviesView({ projects, onOpen, onOpenFile }: { projects: MovieProject[]; onOpen: (project: MovieProject) => void; onOpenFile: () => void }) {
-  return (
-    <div className="library-view">
-      <LibraryHeader title="电影" eyebrow="YOUR FILMS" action={<button className="quiet-button" onClick={onOpenFile}><FolderOpen size={16} /> 打开项目</button>} />
-      <section className="library-content">
-        <div className="library-heading"><div><span>FILM LIBRARY</span><h1>全部电影</h1></div><p>{projects.length} 个项目</p></div>
-        {projects.length === 0 ? (
-          <div className="library-empty"><Film size={34} /><h2>还没有电影项目</h2><p>回到首页输入一个创意，或打开已有的本地项目。</p></div>
-        ) : (
-          <div className="movie-library-grid">
-            {projects.map((project) => {
-              const shots = project.scenes.flatMap((scene) => scene.shots);
-              const completed = shots.filter((shot) => shot.generationStatus === "completed").length;
-              return <button className="movie-library-card" key={project.id} onClick={() => onOpen(project)}><div className="movie-cover"><span>{project.title.slice(0, 1)}</span><Play size={25} fill="currentColor" /></div><div><span className="card-kicker">{project.status}</span><h2>《{project.title}》</h2><p>{project.scenes.length} 个场景 · {shots.length} 个镜头 · {completed} 个已生成</p><small>{project.synopsis}</small></div><ArrowRight size={18} /></button>;
-            })}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function AssetsView({ projects, onOpen }: { projects: MovieProject[]; onOpen: (project: MovieProject, shotId?: string) => void }) {
-  const assets = projects.flatMap((project) => project.scenes.flatMap((scene) => scene.shots.filter((shot) => shot.videoUrl || shot.localAssetPath).map((shot) => ({ project, scene, shot }))));
-  return (
-    <div className="library-view">
-      <LibraryHeader title="素材" eyebrow="MEDIA LIBRARY" />
-      <section className="library-content">
-        <div className="library-heading"><div><span>GENERATED MEDIA</span><h1>镜头素材</h1></div><p>{assets.length} 个视频</p></div>
-        {assets.length === 0 ? (
-          <div className="library-empty"><Layers3 size={34} /><h2>还没有可用素材</h2><p>进入电影工作台生成镜头后，视频会自动汇总到这里。</p></div>
-        ) : (
-          <div className="asset-grid">
-            {assets.map(({ project, scene, shot }) => {
-              const source = shot.videoUrl ?? (shot.localAssetPath && isDesktopApp() ? convertFileSrc(shot.localAssetPath) : undefined);
-              return <button className="asset-card" key={`${project.id}-${shot.id}`} onClick={() => onOpen(project, shot.id)}>{source ? <video src={source} muted preload="metadata" /> : <div className="asset-placeholder"><Film size={28} /></div>}<div><span>{project.title} · 场景 {scene.number}</span><h2>{String(shot.number).padStart(2, "0")} {shot.title}</h2><p>{shot.framing} · {shot.duration} 秒</p></div></button>;
-            })}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
 interface HomeProps {
   idea: string;
   projects: MovieProject[];
@@ -368,7 +286,7 @@ function ProposalView({ project, onBack, onAccept }: { project: MovieProject; on
   return (
     <div className="proposal-view">
       <header className="studio-header">
-        <button className="icon-button" onClick={onBack}><ArrowLeft size={19} /></button>
+        <Button variant="icon" size="icon" onClick={onBack} aria-label="返回"><ArrowLeft size={19} /></Button>
         <div><span className="header-kicker">AI DIRECTOR'S PROPOSAL</span><h2>导演提案</h2></div>
         <span className="step-label">构思完成 · 等待确认</span>
       </header>
