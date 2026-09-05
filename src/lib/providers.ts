@@ -6,6 +6,8 @@ export interface GenerateInput {
   project: MovieProject;
   settings: GenerationSettings;
   apiKey?: string;
+  onTaskCreated?: (taskId: string) => void;
+  onProgress?: (status: string, elapsedSeconds: number) => void;
 }
 
 export interface GenerateResult {
@@ -52,25 +54,27 @@ const mockProvider: VideoProvider = {
 };
 
 const minimaxProvider: VideoProvider = {
-  async generate({ shot, project, settings, apiKey }) {
+  async generate({ shot, project, settings, apiKey, onTaskCreated, onProgress }) {
     if (!apiKey?.trim()) throw new Error("请先在设置中填写 MiniMax API Key。密钥只保留在本次应用会话中。");
     if (!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
       throw new Error("真实 MiniMax 生成只能在 Tauri 桌面应用中运行。请使用 npm run tauri dev 启动。");
     }
 
-    const taskId = await invoke<string>("minimax_create_video", {
-      apiKey,
-      request: {
-        model: settings.model,
-        prompt: buildShotPrompt(shot, project),
-        duration: supportedVideoDuration(shot.duration),
-        resolution: settings.resolution,
-      },
-    });
+    const taskId = shot.taskId ?? await invoke<string>("minimax_create_video", {
+        apiKey,
+        request: {
+          model: settings.model,
+          prompt: buildShotPrompt(shot, project),
+          duration: supportedVideoDuration(shot.duration),
+          resolution: settings.resolution,
+        },
+      });
+    onTaskCreated?.(taskId);
 
-    for (let attempt = 0; attempt < 180; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       await delay(10_000);
       const result = await invoke<MiniMaxTaskResult>("minimax_query_video", { apiKey, taskId });
+      onProgress?.(result.status, (attempt + 1) * 10);
       if (result.status === "Success") {
         if (!result.fileId) throw new Error("生成已完成，但 MiniMax 未返回文件 ID。");
         const videoUrl = await invoke<string>("minimax_retrieve_file", { apiKey, fileId: result.fileId });
@@ -79,9 +83,9 @@ const minimaxProvider: VideoProvider = {
           : undefined;
         return { taskId, videoUrl, localAssetPath };
       }
-      if (result.status === "Fail") throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
+      if (["Fail", "Failed"].includes(result.status)) throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
     }
-    throw new Error("等待生成结果超时。任务仍可能在 MiniMax 后台继续执行。");
+    throw new Error(`等待生成结果超过 10 分钟。任务 ${taskId} 仍可能在 MiniMax 后台继续，可点击“继续查询”。`);
   },
 };
 

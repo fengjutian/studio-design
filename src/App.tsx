@@ -46,6 +46,11 @@ const prompts = [
   "一位宇航员在返回地球前，最后一次望向月球",
 ];
 
+function formatTimecode(seconds: number) {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(whole / 60)).padStart(2, "0")}:${String(whole % 60).padStart(2, "0")}`;
+}
+
 export default function App() {
   const [projects, setProjects] = useState<MovieProject[]>(loadProjects);
   const [active, setActive] = useState<MovieProject | null>(null);
@@ -347,6 +352,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [playingTimeline, setPlayingTimeline] = useState(false);
+  const [activeGenerationId, setActiveGenerationId] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState("正在提交生成任务…");
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const allShots = useMemo(() => getTimelineShots(project), [project]);
@@ -374,20 +381,31 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
 
   const generate = async () => {
     if (!selected) return;
-    const setStatus = (status: Shot["generationStatus"]) => {
-      onUpdate({
-        ...project,
-        status: status === "completed" ? "剪辑中" : "生成中",
-        updatedAt: new Date().toISOString(),
-        scenes: project.scenes.map((scene) => ({
-          ...scene,
-          shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, generationStatus: status } : shot),
-        })),
-      });
-    };
-    setStatus("generating");
+    let currentTaskId = selected.taskId;
+    setActiveGenerationId(selected.id);
+    setGenerationProgress(currentTaskId ? "正在恢复任务状态查询…" : "正在提交生成任务…");
+    onUpdate({
+      ...project,
+      status: "生成中",
+      updatedAt: new Date().toISOString(),
+      scenes: project.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString(), generationError: undefined } : shot),
+      })),
+    });
     try {
-      const result = await getVideoProvider(settings).generate({ shot: selected, project, settings, apiKey });
+      const result = await getVideoProvider(settings).generate({
+        shot: selected,
+        project,
+        settings,
+        apiKey,
+        onTaskCreated: (taskId) => {
+          currentTaskId = taskId;
+          setGenerationProgress(`任务已提交（${taskId}），等待 MiniMax 处理…`);
+          onUpdate({ ...project, status: "生成中", updatedAt: new Date().toISOString(), scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString() } : shot) })) });
+        },
+        onProgress: (status, elapsedSeconds) => setGenerationProgress(`MiniMax 状态：${status} · 已等待 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒`),
+      });
       onUpdate({
         ...project,
         status: "剪辑中",
@@ -403,20 +421,24 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             trimStart: 0,
             trimEnd: selected.duration,
             generationError: undefined,
+            generationStartedAt: undefined,
           } : shot),
         })),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const canResume = Boolean(currentTaskId) && (message.includes("仍可能") || message.includes("无法连接") || message.includes("超时"));
       onUpdate({
         ...project,
         status: "设计中",
         updatedAt: new Date().toISOString(),
         scenes: project.scenes.map((scene) => ({
           ...scene,
-          shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, generationStatus: "failed", generationError: message } : shot),
+          shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: canResume ? currentTaskId : undefined, generationStatus: "failed", generationError: message } : shot),
         })),
       });
+    } finally {
+      setActiveGenerationId(null);
     }
   };
 
@@ -507,10 +529,12 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             <div className="frame-lines" />
             {selected?.generationStatus === "completed" ? (
               selectedSource ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generated-frame"><span className="generated-number">{String(selected.number).padStart(2, "0")}</span><p>{selected.title}</p><button><Play size={22} fill="currentColor" /></button></div>
+            ) : selected?.generationStatus === "generating" && activeGenerationId === selected.id ? (
+              <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>{generationProgress}</p></div>
             ) : selected?.generationStatus === "generating" ? (
-              <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>AI 摄影、灯光和演员正在就位…</p></div>
+              <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">GENERATION INTERRUPTED</span><h3>生成状态查询已中断</h3><p>{selected.taskId ? "视频任务可能仍在 MiniMax 后台运行，可以安全地恢复查询，不会重复创建任务。" : "这是旧版本遗留的状态，本地没有保存任务编号，无法恢复查询。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions"><button className="primary-button compact" onClick={generate}><RotateCcw size={15} /> {selected.taskId ? "恢复任务" : "重新生成"}</button></div></div>
             ) : selected?.generationStatus === "failed" ? (
-              <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={generate}><RotateCcw size={16} /> 再试一次</button></div>
+              <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={generate}><RotateCcw size={16} /> {selected.taskId ? "继续查询" : "再试一次"}</button></div>
             ) : (
               <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>确认右侧的导演意图，然后生成这个镜头。</p><button className="primary-button" onClick={generate}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
             )}
@@ -528,14 +552,23 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="director-input"><textarea placeholder="告诉 AI 你想怎么调整这个镜头…" rows={3} /><button aria-label="发送"><ArrowRight size={18} /></button></div>
         </aside>
       </div>
-      <div className="timeline">
-        <div className="timeline-heading"><span><Clock3 size={14} /> 时间线</span><div className="timeline-tools"><button onClick={() => moveSelected(-1)} disabled={!selected || allShots[0]?.id === selected.id}><ChevronLeft size={13} />前移</button><button onClick={() => moveSelected(1)} disabled={!selected || allShots[allShots.length - 1]?.id === selected.id}>后移<ChevronRight size={13} /></button><b>00:{String(totalDuration).padStart(2, "0")}</b></div></div>
-        <div className="timeline-track">
-          {allShots.map((shot) => <button key={shot.id} style={{ flex: shotPlaybackDuration(shot) }} className={shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shotPlaybackDuration(shot).toFixed(1)}s</i></button>)}
+      <section className="timeline">
+        <header className="timeline-heading">
+          <div className="timeline-title"><Clock3 size={14} /><span>时间线</span><em>SEQUENCE 01</em></div>
+          <div className="timeline-tools"><button onClick={() => moveSelected(-1)} disabled={!selected || allShots[0]?.id === selected.id}><ChevronLeft size={13} /> 前移</button><button onClick={() => moveSelected(1)} disabled={!selected || allShots[allShots.length - 1]?.id === selected.id}>后移 <ChevronRight size={13} /></button><b>{formatTimecode(totalDuration)}:00</b></div>
+        </header>
+        <div className="timeline-editor">
+          <div className="track-labels"><div className="ruler-corner">TC</div><div className="track-label"><Film size={13} /><span><b>V1</b> 主画面</span></div><div className="track-label"><Music2 size={13} /><span><b>A1</b> 配乐</span></div></div>
+          <div className="timeline-scroll">
+            <div className="time-ruler">{Array.from({ length: Math.max(2, Math.ceil(totalDuration / 5) + 1) }, (_, index) => <span key={index} style={{ left: `${Math.min(100, (index * 5 / Math.max(totalDuration, 1)) * 100)}%` }}>{formatTimecode(index * 5)}</span>)}</div>
+            <div className="timeline-track">
+              {allShots.map((shot) => <button key={shot.id} style={{ width: `${Math.max(92, shotPlaybackDuration(shot) * 34)}px` }} className={`${shot.id === selected?.id ? "timeline-clip active" : "timeline-clip"} status-${shot.generationStatus}`} onClick={() => onSelectShot(shot.id)}><span>{String(shot.number).padStart(2, "0")}</span><b>{shot.title}</b><i>{shotPlaybackDuration(shot).toFixed(1)}s</i></button>)}
+            </div>
+            <div className="audio-track-row">{project.soundtrack ? <div className="audio-clip"><b>{project.soundtrack.name}</b><label><Volume2 size={11} /><input type="range" min="0" max="1.5" step="0.05" value={project.soundtrack.volume} onChange={(event) => onUpdate({ ...project, soundtrack: { ...project.soundtrack!, volume: Number(event.target.value) }, updatedAt: new Date().toISOString() })} /></label></div> : <button onClick={importSoundtrack}><Plus size={12} /> 导入配乐</button>}</div>
+          </div>
         </div>
-        <div className="audio-track-row"><span><Music2 size={12} /> 配乐</span>{project.soundtrack ? <div className="audio-clip"><b>{project.soundtrack.name}</b><label><Volume2 size={11} /><input type="range" min="0" max="1.5" step="0.05" value={project.soundtrack.volume} onChange={(event) => onUpdate({ ...project, soundtrack: { ...project.soundtrack!, volume: Number(event.target.value) }, updatedAt: new Date().toISOString() })} /></label></div> : <button onClick={importSoundtrack}><Plus size={12} /> 导入配乐</button>}</div>
         {project.soundtrack && isDesktopApp() && <audio ref={audioRef} src={convertFileSrc(project.soundtrack.localPath)} />}
-      </div>
+      </section>
       {exportOpen && <ExportDialog project={project} exporting={exporting} error={exportError} onExport={runExport} onClose={() => { if (!exporting) setExportOpen(false); }} />}
     </div>
   );

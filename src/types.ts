@@ -14,6 +14,7 @@ export interface Shot {
   videoUrl?: string;
   localAssetPath?: string;
   taskId?: string;
+  generationStartedAt?: string;
   generationError?: string;
   trimStart?: number;
   trimEnd?: number;
