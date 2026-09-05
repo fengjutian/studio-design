@@ -584,6 +584,7 @@ async fn minimax_create_video(
             "prompt": request.prompt,
             "duration": request.duration,
             "resolution": request.resolution,
+            "prompt_optimizer": false,
         }))
         .send()
         .await

@@ -8,6 +8,8 @@ describe("buildShotPrompt", () => {
     const prompt = buildShotPrompt(project.scenes[0].shots[1], project);
     expect(prompt).toContain("[Tracking shot]");
     expect(prompt).toContain(project.visualStyle);
+    expect(prompt).toContain("PROJECT CONTINUITY BIBLE");
+    expect(prompt).toContain("CONTINUE DIRECTLY FROM PREVIOUS SHOT");
     expect(prompt).toContain("no watermark");
   });
 });
