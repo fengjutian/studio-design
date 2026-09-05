@@ -23,4 +23,11 @@ describe("timeline", () => {
     shot.trimEnd = 3.7;
     expect(shotPlaybackDuration(shot)).toBeCloseTo(2.5);
   });
+
+  it("caps legacy generated media at the director's shot duration", () => {
+    const shot = createDirectorProposal("海边散步").scenes[0].shots[0];
+    shot.duration = 4;
+    shot.trimEnd = 10;
+    expect(shotPlaybackDuration(shot)).toBe(4);
+  });
 });

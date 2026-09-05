@@ -588,7 +588,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="preview-canvas">
             <div className="frame-lines" />
             {selected?.generationStatus === "completed" ? (
-              selectedSource ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= (selected.trimEnd ?? selected.duration)) advancePreview(); }} /> : <div className="generated-frame"><span className="generated-number">{String(selected.number).padStart(2, "0")}</span><p>{selected.title}</p><button><Play size={22} fill="currentColor" /></button></div>
+              selectedSource ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generated-frame"><span className="generated-number">{String(selected.number).padStart(2, "0")}</span><p>{selected.title}</p><button><Play size={22} fill="currentColor" /></button></div>
             ) : selected?.generationStatus === "generating" ? (
               <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>AI 摄影、灯光和演员正在就位…</p></div>
             ) : selected?.generationStatus === "failed" ? (

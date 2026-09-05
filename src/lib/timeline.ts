@@ -10,7 +10,7 @@ export function getTimelineShots(project: MovieProject): Shot[] {
 }
 
 export function shotPlaybackDuration(shot: Shot) {
-  return Math.max(0.1, (shot.trimEnd ?? shot.duration) - (shot.trimStart ?? 0));
+  return Math.max(0.1, Math.min(shot.trimEnd ?? shot.duration, shot.duration) - (shot.trimStart ?? 0));
 }
 
 export function moveTimelineShot(project: MovieProject, shotId: string, direction: -1 | 1): MovieProject {
