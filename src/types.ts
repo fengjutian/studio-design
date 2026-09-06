@@ -16,6 +16,7 @@ export interface Shot {
   taskId?: string;
   generationStartedAt?: string;
   generationError?: string;
+  continuitySourceShotId?: string;
   trimStart?: number;
   trimEnd?: number;
 }

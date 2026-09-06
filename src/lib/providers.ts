@@ -14,6 +14,7 @@ export interface GenerateResult {
   taskId: string;
   videoUrl?: string;
   localAssetPath?: string;
+  continuitySourceShotId?: string;
 }
 
 export interface VideoProvider {
@@ -22,7 +23,7 @@ export interface VideoProvider {
 
 export function buildShotPrompt(shot: Shot, project: MovieProject) {
   const motion = cameraCommand(shot.movement);
-  const orderedShots = project.scenes.flatMap((scene) => scene.shots);
+  const orderedShots = getOrderedShots(project);
   const shotIndex = orderedShots.findIndex((item) => item.id === shot.id);
   const previousShot = shotIndex > 0 ? orderedShots[shotIndex - 1] : undefined;
   const scene = project.scenes.find((item) => item.shots.some((candidate) => candidate.id === shot.id));
@@ -38,8 +39,22 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
   ].filter(Boolean).join(" ");
 }
 
+export function getContinuitySource(shot: Shot, project: MovieProject): Shot | undefined {
+  const orderedShots = getOrderedShots(project);
+  const shotIndex = orderedShots.findIndex((item) => item.id === shot.id);
+  if (shotIndex <= 0) return undefined;
+  const previous = orderedShots[shotIndex - 1];
+  return previous.generationStatus === "completed" && Boolean(previous.localAssetPath || previous.videoUrl)
+    ? previous
+    : undefined;
+}
+
 export function supportedVideoDuration(shotDuration: number): 6 | 10 {
   return shotDuration <= 6 ? 6 : 10;
+}
+
+export function modelForGeneration(model: GenerationSettings["model"], usesFirstFrame: boolean) {
+  return usesFirstFrame && model === "T2V-01-Director" ? "I2V-01-Director" : model;
 }
 
 export function getVideoProvider(settings: GenerationSettings): VideoProvider {
@@ -60,13 +75,25 @@ const minimaxProvider: VideoProvider = {
       throw new Error("真实 MiniMax 生成只能在 Tauri 桌面应用中运行。请使用 npm run tauri dev 启动。");
     }
 
+    let continuitySource: Shot | undefined;
+    let firstFrameImage: string | undefined;
+    if (!shot.taskId) {
+      continuitySource = getContinuitySource(shot, project);
+      const source = continuitySource?.localAssetPath ?? continuitySource?.videoUrl;
+      if (source) {
+        onProgress?.("正在提取上一镜头尾帧", 0);
+        firstFrameImage = await invoke<string>("extract_video_last_frame", { source });
+      }
+    }
+
     const taskId = shot.taskId ?? await invoke<string>("minimax_create_video", {
         apiKey,
         request: {
-          model: settings.model,
+          model: modelForGeneration(settings.model, Boolean(firstFrameImage)),
           prompt: buildShotPrompt(shot, project),
           duration: supportedVideoDuration(shot.duration),
           resolution: settings.resolution,
+          firstFrameImage,
         },
       });
     onTaskCreated?.(taskId);
@@ -81,13 +108,22 @@ const minimaxProvider: VideoProvider = {
         const localAssetPath = project.localPath
           ? await invoke<string>("download_generation", { projectPath: project.localPath, shotId: shot.id, url: videoUrl })
           : undefined;
-        return { taskId, videoUrl, localAssetPath };
+        return { taskId, videoUrl, localAssetPath, continuitySourceShotId: continuitySource?.id ?? shot.continuitySourceShotId };
       }
       if (["Fail", "Failed"].includes(result.status)) throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
     }
     throw new Error(`等待生成结果超过 10 分钟。任务 ${taskId} 仍可能在 MiniMax 后台继续，可点击“继续查询”。`);
   },
 };
+
+function getOrderedShots(project: MovieProject) {
+  const shots = project.scenes.flatMap((scene) => scene.shots);
+  if (!project.timelineOrder?.length) return shots;
+  const byId = new Map(shots.map((shot) => [shot.id, shot]));
+  const ordered = project.timelineOrder.flatMap((id) => byId.get(id) ?? []);
+  const included = new Set(ordered.map((shot) => shot.id));
+  return [...ordered, ...shots.filter((shot) => !included.has(shot.id))];
+}
 
 interface MiniMaxTaskResult {
   status: string;

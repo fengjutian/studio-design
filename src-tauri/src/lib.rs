@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri::Manager;
 
 const MINIMAX_API_BASE: &str = "https://api.minimaxi.com/v1";
@@ -11,6 +12,7 @@ struct CreateVideoRequest {
     prompt: String,
     duration: u8,
     resolution: String,
+    first_frame_image: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -576,16 +578,21 @@ async fn minimax_create_video(
         return Err("MiniMax 视频时长必须为 6 秒或 10 秒。".into());
     }
 
+    let mut payload = serde_json::json!({
+        "model": request.model,
+        "prompt": request.prompt,
+        "duration": request.duration,
+        "resolution": request.resolution,
+        "prompt_optimizer": false,
+    });
+    if let Some(first_frame_image) = request.first_frame_image {
+        payload["first_frame_image"] = serde_json::Value::String(first_frame_image);
+    }
+
     let response = client()
         .post(format!("{MINIMAX_API_BASE}/video_generation"))
         .bearer_auth(api_key.trim())
-        .json(&serde_json::json!({
-            "model": request.model,
-            "prompt": request.prompt,
-            "duration": request.duration,
-            "resolution": request.resolution,
-            "prompt_optimizer": false,
-        }))
+        .json(&payload)
         .send()
         .await
         .map_err(network_error)?;
@@ -594,6 +601,42 @@ async fn minimax_create_video(
     let body: CreateVideoResponse = response.json().await.map_err(parse_error)?;
     ensure_success(status, &body.base_resp)?;
     body.task_id.ok_or_else(|| "MiniMax 未返回任务 ID。".into())
+}
+
+#[tauri::command]
+async fn extract_video_last_frame(source: String) -> Result<String, String> {
+    if source.trim().is_empty() {
+        return Err("上一镜头没有可用的视频素材。".into());
+    }
+    let output = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-sseof", "-0.12", "-i"])
+        .arg(&source)
+        .args(["-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"])
+        .output()
+        .map_err(|error| format!("无法读取上一镜头尾帧，请确认 ffmpeg 已安装：{error}"))?;
+    if !output.status.success() || output.stdout.is_empty() {
+        return Err(format!(
+            "无法提取上一镜头尾帧：{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let encoded = encode_base64(&output.stdout);
+    Ok(format!("data:image/jpeg;base64,{encoded}"))
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let value = ((chunk[0] as u32) << 16)
+            | ((chunk.get(1).copied().unwrap_or(0) as u32) << 8)
+            | chunk.get(2).copied().unwrap_or(0) as u32;
+        result.push(TABLE[((value >> 18) & 63) as usize] as char);
+        result.push(TABLE[((value >> 12) & 63) as usize] as char);
+        result.push(if chunk.len() > 1 { TABLE[((value >> 6) & 63) as usize] as char } else { '=' });
+        result.push(if chunk.len() > 2 { TABLE[(value & 63) as usize] as char } else { '=' });
+    }
+    result
 }
 
 #[tauri::command]
@@ -682,6 +725,7 @@ pub fn run() {
             minimax_expand_idea,
             minimax_test_connection,
             minimax_create_video,
+            extract_video_last_frame,
             minimax_query_video,
             minimax_retrieve_file
         ])

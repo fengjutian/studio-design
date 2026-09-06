@@ -421,6 +421,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             taskId: result.taskId,
             videoUrl: result.videoUrl,
             localAssetPath: result.localAssetPath,
+            continuitySourceShotId: result.continuitySourceShotId,
             trimStart: 0,
             trimEnd: selected.duration,
             generationError: undefined,
@@ -571,7 +572,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             )}
           </div>
           {selected?.generationStatus === "completed" && selectedSource && <div className="trim-editor"><span><Scissors size={13} /> 裁剪</span><label>入点 <input type="range" min={0} max={Math.max(.2, (selected.trimEnd ?? selected.duration) - .1)} step="0.1" value={selected.trimStart ?? 0} onChange={(event) => updateTrim("trimStart", Number(event.target.value))} /><b>{(selected.trimStart ?? 0).toFixed(1)}s</b></label><label>出点 <input type="range" min={Math.min(selected.duration - .1, (selected.trimStart ?? 0) + .1)} max={selected.duration} step="0.1" value={selected.trimEnd ?? selected.duration} onChange={(event) => updateTrim("trimEnd", Number(event.target.value))} /><b>{(selected.trimEnd ?? selected.duration).toFixed(1)}s</b></label></div>}
-          <div className="shot-description"><span>导演意图</span><p>{selected?.description}</p><div><span>{selected?.framing}</span><span>{selected?.movement}</span><span>{selected?.duration} 秒</span></div></div>
+          <div className="shot-description"><span>导演意图</span><p>{selected?.description}</p><div>{selected?.continuitySourceShotId && <span title="生成时使用了上一镜头的尾帧">尾帧续拍</span>}<span>{selected?.framing}</span><span>{selected?.movement}</span><span>{selected?.duration} 秒</span></div></div>
         </section>
 
         <aside className="director-panel">
