@@ -362,7 +362,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const allShots = useMemo(() => getTimelineShots(project), [project]);
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
   const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
-  const selectedSource = selected?.videoUrl ?? (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined);
+  const selectedSource = (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined) ?? selected?.videoUrl;
 
   useEffect(() => {
     const video = videoRef.current;

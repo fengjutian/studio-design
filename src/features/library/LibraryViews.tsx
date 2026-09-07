@@ -33,7 +33,7 @@ export function AssetsView({ projects, onOpen }: { projects: MovieProject[]; onO
       <section className="library-content">
         <div className="library-heading"><div><span>GENERATED MEDIA</span><h1>镜头素材</h1></div><p>{assets.length} 个视频</p></div>
         {assets.length === 0 ? <div className="library-empty"><Layers3 size={34} /><h2>还没有可用素材</h2><p>进入电影工作台生成镜头后，视频会自动汇总到这里。</p></div> : <div className="asset-grid">{assets.map(({ project, scene, shot }) => {
-          const source = shot.videoUrl ?? (shot.localAssetPath && isDesktopApp() ? convertFileSrc(shot.localAssetPath) : undefined);
+          const source = (shot.localAssetPath && isDesktopApp() ? convertFileSrc(shot.localAssetPath) : undefined) ?? shot.videoUrl;
           return <button type="button" className="asset-card" key={`${project.id}-${shot.id}`} onClick={() => onOpen(project, shot.id)}>{source ? <video src={source} muted preload="metadata" /> : <div className="asset-placeholder"><Film size={28} /></div>}<div><span>{project.title} · 场景 {scene.number}</span><h2>{String(shot.number).padStart(2, "0")} {shot.title}</h2><p>{shot.framing} · {shot.duration} 秒</p></div></button>;
         })}</div>}
       </section>
