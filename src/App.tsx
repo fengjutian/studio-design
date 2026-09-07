@@ -354,6 +354,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const [playingTimeline, setPlayingTimeline] = useState(false);
   const [activeGenerationId, setActiveGenerationId] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState("正在提交生成任务…");
+  const [mediaErrorShotId, setMediaErrorShotId] = useState<string | null>(null);
   const [timelinePanning, setTimelinePanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -363,6 +364,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
   const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
   const selectedSource = (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined) ?? selected?.videoUrl;
+
+  useEffect(() => setMediaErrorShotId(null), [selected?.id, selectedSource]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -560,7 +563,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="preview-canvas">
             <div className="frame-lines" />
             {selected?.generationStatus === "completed" ? (
-              selectedSource ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generated-frame"><span className="generated-number">{String(selected.number).padStart(2, "0")}</span><p>{selected.title}</p><button><Play size={22} fill="currentColor" /></button></div>
+              selectedSource && mediaErrorShotId !== selected.id ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onError={() => { setPlayingTimeline(false); setMediaErrorShotId(selected.id); }} onLoadedData={() => setMediaErrorShotId(null)} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">VIDEO LINK EXPIRED</span><h3>视频链接已经失效</h3><p>{selected.taskId ? "原生成任务还在，可以用任务 ID 重新获取下载地址。请先保存项目，恢复后视频会下载到本地。" : "这个镜头没有保存本地文件，也没有可用于恢复的任务 ID。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="primary-button compact" onClick={generate}><RotateCcw size={15} /> 重新获取视频</button>}</div></div>
             ) : selected?.generationStatus === "generating" && activeGenerationId === selected.id ? (
               <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>{generationProgress}</p></div>
             ) : selected?.generationStatus === "generating" ? (
