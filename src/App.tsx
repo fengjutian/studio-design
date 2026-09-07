@@ -385,9 +385,10 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     }
   }, [playingTimeline, project.soundtrack?.trimStart]);
 
-  const generate = async () => {
+  const generate = async (forceNew = false) => {
     if (!selected) return;
-    let currentTaskId = selected.taskId;
+    const generationShot = forceNew ? { ...selected, taskId: undefined } : selected;
+    let currentTaskId = generationShot.taskId;
     setActiveGenerationId(selected.id);
     setGenerationProgress(currentTaskId ? "正在恢复任务状态查询…" : "正在提交生成任务…");
     onUpdate({
@@ -396,12 +397,12 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
       updatedAt: new Date().toISOString(),
       scenes: project.scenes.map((scene) => ({
         ...scene,
-        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString(), generationError: undefined } : shot),
+        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: forceNew ? undefined : shot.taskId, generationStatus: "generating", generationStartedAt: new Date().toISOString(), generationError: undefined } : shot),
       })),
     });
     try {
       const result = await getVideoProvider(settings).generate({
-        shot: selected,
+        shot: generationShot,
         project,
         settings,
         apiKey,
@@ -559,19 +560,19 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         </aside>
 
         <section className="canvas-panel">
-          <div className="canvas-toolbar"><span>镜头 {String(selected?.number ?? 1).padStart(2, "0")}</span><button><MoreHorizontal size={17} /></button></div>
+          <div className="canvas-toolbar"><span>镜头 {String(selected?.number ?? 1).padStart(2, "0")}</span><div>{selected?.generationStatus === "completed" && <button type="button" title="创建一个新的生成任务，可能产生费用" onClick={() => void generate(true)}><RotateCcw size={15} /> 重新生成</button>}<button><MoreHorizontal size={17} /></button></div></div>
           <div className="preview-canvas">
             <div className="frame-lines" />
             {selected?.generationStatus === "completed" ? (
-              selectedSource && mediaErrorShotId !== selected.id ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onError={() => { setPlayingTimeline(false); setMediaErrorShotId(selected.id); }} onLoadedData={() => setMediaErrorShotId(null)} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">VIDEO LINK EXPIRED</span><h3>视频链接已经失效</h3><p>{selected.taskId ? "原生成任务还在，可以用任务 ID 重新获取下载地址。请先保存项目，恢复后视频会下载到本地。" : "这个镜头没有保存本地文件，也没有可用于恢复的任务 ID。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="primary-button compact" onClick={generate}><RotateCcw size={15} /> 重新获取视频</button>}</div></div>
+              selectedSource && mediaErrorShotId !== selected.id ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onError={() => { setPlayingTimeline(false); setMediaErrorShotId(selected.id); }} onLoadedData={() => setMediaErrorShotId(null)} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">VIDEO LINK EXPIRED</span><h3>视频链接已经失效</h3><p>{selected.taskId ? "原生成任务还在，可以先重新获取；也可以创建一个全新视频任务。" : "旧视频无法恢复，可以重新生成这个镜头。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="secondary-button compact" onClick={() => void generate()}><RotateCcw size={15} /> 重新获取</button>}<button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 重新生成</button></div></div>
             ) : selected?.generationStatus === "generating" && activeGenerationId === selected.id ? (
               <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>{generationProgress}</p></div>
             ) : selected?.generationStatus === "generating" ? (
-              <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">GENERATION INTERRUPTED</span><h3>生成状态查询已中断</h3><p>{selected.taskId ? "视频任务可能仍在 MiniMax 后台运行，可以安全地恢复查询，不会重复创建任务。" : "这是旧版本遗留的状态，本地没有保存任务编号，无法恢复查询。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions"><button className="primary-button compact" onClick={generate}><RotateCcw size={15} /> {selected.taskId ? "恢复任务" : "重新生成"}</button></div></div>
+              <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">GENERATION INTERRUPTED</span><h3>生成状态查询已中断</h3><p>{selected.taskId ? "视频任务可能仍在 MiniMax 后台运行，可以安全地恢复查询，不会重复创建任务。" : "这是旧版本遗留的状态，本地没有保存任务编号，可以重新生成。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="secondary-button compact" onClick={() => void generate()}><RotateCcw size={15} /> 恢复任务</button>}<button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 重新生成</button></div></div>
             ) : selected?.generationStatus === "failed" ? (
-              <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={generate}><RotateCcw size={16} /> {selected.taskId ? "继续查询" : "再试一次"}</button></div>
+              <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={() => void generate(selected.taskId ? false : true)}><RotateCcw size={16} /> {selected.taskId ? "继续查询" : "再试一次"}</button></div>
             ) : (
-              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>确认右侧的导演意图，然后生成这个镜头。</p><button className="primary-button" onClick={generate}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
+              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>确认右侧的导演意图，然后生成这个镜头。</p><button className="primary-button" onClick={() => void generate(true)}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
             )}
           </div>
           {selected?.generationStatus === "completed" && selectedSource && <div className="trim-editor"><span><Scissors size={13} /> 裁剪</span><label>入点 <input type="range" min={0} max={Math.max(.2, (selected.trimEnd ?? selected.duration) - .1)} step="0.1" value={selected.trimStart ?? 0} onChange={(event) => updateTrim("trimStart", Number(event.target.value))} /><b>{(selected.trimStart ?? 0).toFixed(1)}s</b></label><label>出点 <input type="range" min={Math.min(selected.duration - .1, (selected.trimStart ?? 0) + .1)} max={selected.duration} step="0.1" value={selected.trimEnd ?? selected.duration} onChange={(event) => updateTrim("trimEnd", Number(event.target.value))} /><b>{(selected.trimEnd ?? selected.duration).toFixed(1)}s</b></label></div>}
