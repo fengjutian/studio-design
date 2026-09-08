@@ -664,12 +664,19 @@ async fn minimax_create_video(
 }
 
 #[tauri::command]
-async fn extract_video_last_frame(source: String) -> Result<String, String> {
+async fn extract_video_last_frame(source: String, seconds: Option<f64>) -> Result<String, String> {
     if source.trim().is_empty() {
         return Err("上一镜头没有可用的视频素材。".into());
     }
-    let output = Command::new("ffmpeg")
-        .args(["-hide_banner", "-loglevel", "error", "-sseof", "-0.12", "-i"])
+    let mut command = Command::new("ffmpeg");
+    command.args(["-hide_banner", "-loglevel", "error"]);
+    if let Some(time) = seconds {
+        if !time.is_finite() || time < 0.0 { return Err("Invalid frame timestamp.".into()); }
+        command.args(["-ss", &time.to_string()]);
+    } else {
+        command.args(["-sseof", "-0.12"]);
+    }
+    let output = command.arg("-i")
         .arg(&source)
         .args(["-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"])
         .output()

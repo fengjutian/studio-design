@@ -39,6 +39,8 @@ import type { GenerationSettings, MovieProject, Shot } from "@/domain/movie";
 import type { AppView as View } from "@/app/navigation";
 import { AppRail } from "@/app/AppRail";
 import { AssetsView, MoviesView } from "@/features/library";
+import { ContinuityTools } from "./components/ContinuityTools";
+import { archiveShot, continuityFrameTime } from "./lib/continuityFrames";
 
 const prompts = [
   "一封迟到了十年的信，在海边小镇找到收件人",
@@ -390,14 +392,15 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   }, [playingTimeline, project.soundtrack?.trimStart]);
 
   const generate = async (forceNew = false) => {
-    if (!selected) return;
+    if (!selected || activeGenerationId) return;
     if (continuityBlocked) return;
-    const generationShot = forceNew ? { ...selected, taskId: undefined } : selected;
+    const generationShot = forceNew ? { ...selected, taskId: undefined, continuitySourceShotId: undefined, visualReferenceName: undefined } : selected;
     const taskSettings = !forceNew && selected.taskId && selected.generationProviderId
       ? { ...settings, provider: selected.generationProviderId, model: selected.generationModelId ?? settings.model }
       : settings;
     const taskProviderName = getActiveProviderName(taskSettings);
-    const generationProject = forceNew ? invalidateDownstreamContinuity(project, selected.id) : project;
+    const archived = { ...project, scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...archiveShot(shot), sourceFrame: forceNew && sameSceneTransition && previousShot ? { shotId: previousShot.id, taskId: previousShot.taskId, path: previousShot.localAssetPath, seconds: continuityFrameTime(previousShot) } : forceNew ? undefined : shot.sourceFrame } : shot) })) };
+    const generationProject = forceNew ? invalidateDownstreamContinuity(archived, selected.id) : archived;
     let currentTaskId = generationShot.taskId;
     setActiveGenerationId(selected.id);
     setGenerationProgress(currentTaskId ? "正在恢复任务状态查询…" : "正在提交生成任务…");
@@ -502,11 +505,25 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   };
 
   const updateTrim = (field: "trimStart" | "trimEnd", value: number) => {
-    if (!selected) return;
+    if (!selected || activeGenerationId) return;
     const limit = selected.trimEnd ?? selected.duration;
     const start = field === "trimStart" ? Math.min(value, limit - 0.1) : selected.trimStart ?? 0;
     const end = field === "trimEnd" ? Math.max(value, start + 0.1) : limit;
-    onUpdate({ ...project, scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, trimStart: start, trimEnd: end } : shot) })), updatedAt: new Date().toISOString() });
+    const next = { ...project, scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, trimStart: start, trimEnd: end } : shot) })), updatedAt: new Date().toISOString() };
+    onUpdate(end !== limit ? invalidateDownstreamContinuity(next, selected.id) : next);
+  };
+
+  const restoreVersion = (index: number) => {
+    if (!selected || activeGenerationId) return;
+    const version = selected.versions?.[index];
+    if (!version) return;
+    const archived = archiveShot(selected);
+    const { savedAt: _, ...restored } = version;
+    const referenceMatches = restored.sourceFrame
+      ? previousShot?.id === restored.sourceFrame.shotId && previousShot.taskId === restored.sourceFrame.taskId && previousShot.localAssetPath === restored.sourceFrame.path && continuityFrameTime(previousShot) === restored.sourceFrame.seconds && !previousShot.continuityStale
+      : !sameSceneTransition && restored.visualReferenceName === project.visualReference?.name;
+    const next = { ...project, updatedAt: new Date().toISOString(), scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...restored, versions: archived.versions, generationStatus: "completed" as const, continuityStale: !!restored.continuityStale || !referenceMatches } : shot) })) };
+    onUpdate(invalidateDownstreamContinuity(next, selected.id));
   };
 
   const startTimelinePan = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -616,6 +633,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         <aside className="director-panel">
           <div className="panel-heading"><span><Sparkles size={15} /> AI 导演</span><div className="mode-switch"><button className={!directorMode ? "active" : ""} onClick={() => setDirectorMode(false)}>普通</button><button className={directorMode ? "active" : ""} onClick={() => setDirectorMode(true)}>导演</button></div></div>
           <div className="director-conversation">
+            {selected && <ContinuityTools shot={selected} disabled={!!activeGenerationId} onCut={(seconds) => updateTrim("trimEnd", seconds)} onRestore={restoreVersion} />}
             <div className="ai-message"><span>AI 导演助手</span><p>这是<strong>{selected?.title}</strong>。{selected?.description}</p><p>我会使用{selected?.framing}和{selected?.movement}，让画面延续“{project.visualStyle}”的感觉。</p></div>
             {directorMode && <div className="pro-controls"><span>镜头规格</span><label>摄影机<input value={selected?.framing ?? ""} readOnly /></label><label>运镜<input value={selected?.movement ?? ""} readOnly /></label><label>视觉风格<textarea value={project.visualStyle} readOnly /></label><label>生成引擎<input value={`${providerName} · ${settings.model}`} readOnly /></label></div>}
           </div>

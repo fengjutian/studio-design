@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getPreviousTimelineShot, isUsableContinuitySource, sharesSceneWithPrevious } from "./timeline";
 import { getProviderDefinition } from "./providerRegistry";
+import { continuityFrameTime } from "./continuityFrames";
 import type { GenerationSettings, MovieProject, Shot } from "../types";
 
 export interface GenerateInput {
@@ -96,7 +97,7 @@ const minimaxProvider: VideoProvider = {
       const source = continuitySource?.localAssetPath ?? continuitySource?.videoUrl;
       if (source) {
         onProgress?.("正在提取上一镜头尾帧", 0);
-        firstFrameImage = await invoke<string>("extract_video_last_frame", { source });
+        firstFrameImage = await invoke<string>("extract_video_last_frame", { source, seconds: continuityFrameTime(continuitySource!) });
       } else if (project.visualReference && project.localPath) {
         onProgress?.("正在载入项目视觉基准帧", 0);
         firstFrameImage = await invoke<string>("read_project_image_data_url", { projectPath: project.localPath, path: project.visualReference.localPath });
@@ -123,7 +124,7 @@ const minimaxProvider: VideoProvider = {
         if (!result.fileId) throw new Error("生成已完成，但 MiniMax 未返回文件 ID。");
         const videoUrl = await invoke<string>("minimax_retrieve_file", { apiKey, fileId: result.fileId });
         const localAssetPath = project.localPath
-          ? await invoke<string>("download_generation", { projectPath: project.localPath, shotId: shot.id, url: videoUrl })
+          ? await invoke<string>("download_generation", { projectPath: project.localPath, shotId: `${shot.id}-${crypto.randomUUID()}`, url: videoUrl })
           : undefined;
         return {
           taskId,

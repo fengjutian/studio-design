@@ -23,7 +23,11 @@ export interface Shot {
   continuityStale?: boolean;
   trimStart?: number;
   trimEnd?: number;
+  versions?: ShotVersion[];
+  sourceFrame?: { shotId: string; taskId?: string; path?: string; seconds: number };
 }
+
+export type ShotVersion = Omit<Shot, "versions"> & { savedAt: string };
 
 export interface AudioTrack {
   id: string;

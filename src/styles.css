@@ -227,6 +227,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .mode-switch button { border: 0; border-radius: 4px; background: transparent; padding: 4px 7px; font-size: 8px; color: #5e5d59; cursor: pointer; }
 .mode-switch button.active { color: #bbb8b1; background: #272729; }
 .director-conversation { flex: 1; overflow: auto; padding: 16px 13px; }
+.continuity-tools { display: grid; gap: 9px; padding: 12px; margin-bottom: 12px; background: #18181a; color: #aaa; font-size: 11px; }
+.continuity-tools button, .continuity-tools select { background: #252527; color: #d0d0cb; border: 1px solid #45453e; padding: 7px; border-radius: 5px; cursor: pointer; max-width: 100%; }
+.continuity-tools button:disabled { opacity: .4; cursor: default; }
+.candidate-frames { display: grid; gap: 8px; }
+.candidate-frames img { width: 100%; display: block; }
 .ai-message { padding: 13px; background: #18181a; border-radius: 9px; border-top-left-radius: 2px; }
 .ai-message span, .pro-controls > span { font-size: 9px; color: var(--accent); }
 .ai-message p { color: #8e8b85; font-size: 10px; line-height: 1.7; margin: 8px 0 0; }
