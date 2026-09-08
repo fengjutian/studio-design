@@ -13,6 +13,30 @@ export function shotPlaybackDuration(shot: Shot) {
   return Math.max(0.1, Math.min(shot.trimEnd ?? shot.duration, shot.duration) - (shot.trimStart ?? 0));
 }
 
+export function getPreviousTimelineShot(project: MovieProject, shotId: string): Shot | undefined {
+  const shots = getTimelineShots(project);
+  const index = shots.findIndex((shot) => shot.id === shotId);
+  return index > 0 ? shots[index - 1] : undefined;
+}
+
+export function isUsableContinuitySource(shot: Shot | undefined) {
+  return Boolean(shot && shot.generationStatus === "completed" && !shot.continuityStale && (shot.localAssetPath || shot.videoUrl));
+}
+
+export function invalidateDownstreamContinuity(project: MovieProject, shotId: string): MovieProject {
+  const ordered = getTimelineShots(project);
+  const sourceIndex = ordered.findIndex((shot) => shot.id === shotId);
+  if (sourceIndex < 0) return project;
+  const staleIds = new Set(ordered.slice(sourceIndex + 1).map((shot) => shot.id));
+  return {
+    ...project,
+    scenes: project.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => staleIds.has(shot.id) && shot.generationStatus === "completed" ? { ...shot, continuityStale: true } : shot),
+    })),
+  };
+}
+
 export function moveTimelineShot(project: MovieProject, shotId: string, direction: -1 | 1): MovieProject {
   const order = getTimelineShots(project).map((shot) => shot.id);
   const current = order.indexOf(shotId);

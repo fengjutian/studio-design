@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getPreviousTimelineShot, isUsableContinuitySource } from "./timeline";
 import type { GenerationSettings, MovieProject, Shot } from "../types";
 
 export interface GenerateInput {
@@ -40,13 +41,8 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
 }
 
 export function getContinuitySource(shot: Shot, project: MovieProject): Shot | undefined {
-  const orderedShots = getOrderedShots(project);
-  const shotIndex = orderedShots.findIndex((item) => item.id === shot.id);
-  if (shotIndex <= 0) return undefined;
-  const previous = orderedShots[shotIndex - 1];
-  return previous.generationStatus === "completed" && Boolean(previous.localAssetPath || previous.videoUrl)
-    ? previous
-    : undefined;
+  const previous = getPreviousTimelineShot(project, shot.id);
+  return isUsableContinuitySource(previous) ? previous : undefined;
 }
 
 export function supportedVideoDuration(shotDuration: number): 6 | 10 {

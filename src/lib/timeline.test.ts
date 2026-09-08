@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDirectorProposal } from "./director";
-import { getTimelineShots, moveTimelineShot, shotPlaybackDuration } from "./timeline";
+import { getPreviousTimelineShot, getTimelineShots, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, shotPlaybackDuration } from "./timeline";
 
 describe("timeline", () => {
   it("moves a shot without changing the scene structure", () => {
@@ -29,5 +29,29 @@ describe("timeline", () => {
     shot.duration = 4;
     shot.trimEnd = 10;
     expect(shotPlaybackDuration(shot)).toBe(4);
+  });
+});
+
+describe("continuity chain", () => {
+  it("requires an immediately preceding completed asset", () => {
+    const project = createDirectorProposal("雨夜上海");
+    const shots = getTimelineShots(project);
+    expect(getPreviousTimelineShot(project, shots[1].id)?.id).toBe(shots[0].id);
+    expect(isUsableContinuitySource(shots[0])).toBe(false);
+    shots[0].generationStatus = "completed";
+    shots[0].videoUrl = "https://example.com/shot.mp4";
+    expect(isUsableContinuitySource(shots[0])).toBe(true);
+  });
+
+  it("marks completed downstream shots stale after an upstream regeneration", () => {
+    const project = createDirectorProposal("雨夜上海");
+    const shots = getTimelineShots(project);
+    for (const shot of shots) {
+      shot.generationStatus = "completed";
+      shot.videoUrl = `https://example.com/${shot.id}.mp4`;
+    }
+    const updated = invalidateDownstreamContinuity(project, shots[0].id);
+    expect(getTimelineShots(updated)[0].continuityStale).not.toBe(true);
+    expect(getTimelineShots(updated).slice(1).every((shot) => shot.continuityStale)).toBe(true);
   });
 });
