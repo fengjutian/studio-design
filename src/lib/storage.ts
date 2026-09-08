@@ -1,4 +1,5 @@
 import type { GenerationSettings, MovieProject } from "../types";
+import { normalizeGenerationSettings } from "./providerRegistry";
 
 const KEY = "director-studio-projects-v1";
 const SETTINGS_KEY = "director-studio-settings-v1";
@@ -28,7 +29,7 @@ export function saveProjects(projects: MovieProject[]) {
 
 export function loadSettings(): GenerationSettings {
   try {
-    return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
+    return normalizeGenerationSettings({ ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") });
   } catch {
     return defaultSettings;
   }

@@ -30,7 +30,7 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { developIdea, expandIdea } from "@/features/director";
-import { getVideoProvider, supportedVideoDuration } from "@/features/generation";
+import { getActiveProviderName, getModelDefinition, getProviderDefinition, getVideoProvider, providerDefinitions, selectProvider, supportedVideoDuration } from "@/features/generation";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "@/features/projects";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
 import { getPreviousTimelineShot, getTimelineShots, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, shotPlaybackDuration } from "@/features/timeline";
@@ -347,6 +347,7 @@ interface StudioProps {
 }
 
 function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, settings, apiKey, onSaveAs }: StudioProps) {
+  const providerName = getActiveProviderName(settings);
   const [directorMode, setDirectorMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -412,10 +413,10 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         apiKey,
         onTaskCreated: (taskId) => {
           currentTaskId = taskId;
-          setGenerationProgress(`任务已提交（${taskId}），等待 MiniMax 处理…`);
+          setGenerationProgress(`任务已提交（${taskId}），等待 ${providerName} 处理…`);
           onUpdate({ ...generationProject, status: "生成中", updatedAt: new Date().toISOString(), scenes: generationProject.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString() } : shot) })) });
         },
-        onProgress: (status, elapsedSeconds) => setGenerationProgress(`MiniMax 状态：${status} · 已等待 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒`),
+        onProgress: (status, elapsedSeconds) => setGenerationProgress(`${providerName} 状态：${status} · 已等待 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒`),
       });
       onUpdate({
         ...generationProject,
@@ -594,7 +595,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="panel-heading"><span><Sparkles size={15} /> AI 导演</span><div className="mode-switch"><button className={!directorMode ? "active" : ""} onClick={() => setDirectorMode(false)}>普通</button><button className={directorMode ? "active" : ""} onClick={() => setDirectorMode(true)}>导演</button></div></div>
           <div className="director-conversation">
             <div className="ai-message"><span>AI 导演助手</span><p>这是<strong>{selected?.title}</strong>。{selected?.description}</p><p>我会使用{selected?.framing}和{selected?.movement}，让画面延续“{project.visualStyle}”的感觉。</p></div>
-            {directorMode && <div className="pro-controls"><span>镜头规格</span><label>摄影机<input value={selected?.framing ?? ""} readOnly /></label><label>运镜<input value={selected?.movement ?? ""} readOnly /></label><label>视觉风格<textarea value={project.visualStyle} readOnly /></label><label>生成引擎<input value={settings.provider === "mock" ? "体验模式" : `MiniMax · ${settings.model}`} readOnly /></label></div>}
+            {directorMode && <div className="pro-controls"><span>镜头规格</span><label>摄影机<input value={selected?.framing ?? ""} readOnly /></label><label>运镜<input value={selected?.movement ?? ""} readOnly /></label><label>视觉风格<textarea value={project.visualStyle} readOnly /></label><label>生成引擎<input value={`${providerName} · ${settings.model}`} readOnly /></label></div>}
           </div>
           <div className="director-input"><textarea placeholder="告诉 AI 你想怎么调整这个镜头…" rows={3} /><button aria-label="发送"><ArrowRight size={18} /></button></div>
         </aside>
@@ -655,6 +656,21 @@ function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: Settin
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionResult, setConnectionResult] = useState<{ ok: boolean; message: string } | null>(null);
   const set = <K extends keyof GenerationSettings>(key: K, value: GenerationSettings[K]) => onSettings({ ...settings, [key]: value });
+  const activeProvider = getProviderDefinition(settings.provider) ?? providerDefinitions[0];
+  const activeModel = getModelDefinition(settings) ?? activeProvider.models[0];
+  const setProvider = (providerId: string) => {
+    onSettings(selectProvider(settings, providerId));
+    setConnectionResult(null);
+  };
+  const setModel = (modelId: string) => {
+    const next = { ...settings, model: modelId };
+    const model = getModelDefinition(next);
+    onSettings({
+      ...next,
+      resolution: model?.capabilities.resolutions[0] ?? settings.resolution,
+      duration: model?.capabilities.durations[0] ?? settings.duration,
+    });
+  };
   const testConnection = async () => {
     if (!apiKey.trim()) {
       setConnectionResult({ ok: false, message: "请先填写 API Key。" });
@@ -693,24 +709,18 @@ function SettingsView({ settings, apiKey, onSettings, onApiKey, onBack }: Settin
         </section>
         <section className="settings-card">
           <div className="settings-card-title"><Sparkles size={19} /><div><h3>生成服务</h3><p>控制镜头由模拟引擎还是真实模型生成。</p></div></div>
-          <div className="provider-options">
-            <button className={settings.provider === "mock" ? "provider-option active" : "provider-option"} onClick={() => set("provider", "mock")}>
-              <span className="provider-radio" /><div><strong>体验模式</strong><p>快速模拟任务流程，不联网、不产生费用。</p></div><i>推荐入门</i>
-            </button>
-            <button className={settings.provider === "minimax" ? "provider-option active" : "provider-option"} onClick={() => set("provider", "minimax")}>
-              <span className="provider-radio" /><div><strong>MiniMax</strong><p>调用 Hailuo 视频模型生成真实镜头。</p></div><i>真实生成</i>
-            </button>
-          </div>
+          <div className="provider-options">{providerDefinitions.map((provider) => <button key={provider.id} className={settings.provider === provider.id ? "provider-option active" : "provider-option"} onClick={() => setProvider(provider.id)}><span className="provider-radio" /><div><strong>{provider.name}</strong><p>{provider.description}</p></div><i>{provider.badge}</i></button>)}</div>
         </section>
 
         <section className={settings.provider === "minimax" || settings.directorProvider === "minimax" ? "settings-card" : "settings-card disabled-card"}>
           <div className="settings-card-title"><KeyRound size={19} /><div><h3>MiniMax 国内连接</h3><p>连接国内开放平台 api.minimaxi.com；密钥保存在当前设备的应用存储中。</p></div></div>
           <div className="settings-form">
             <label className="wide-field"><span>API Key</span><div className="api-key-row"><input type="password" value={apiKey} disabled={settings.provider !== "minimax" && settings.directorProvider !== "minimax"} onChange={(event) => { onApiKey(event.target.value); setConnectionResult(null); }} placeholder="输入 MiniMax API Key" /><button type="button" className="secondary-button test-api-button" onClick={testConnection} disabled={!apiKey.trim() || testingConnection}>{testingConnection ? <span className="mini-spinner" /> : <Check size={14} />}{testingConnection ? "测试中" : "测试连接"}</button></div><small><ShieldCheck size={12} /> 保存在本机应用存储中，不写入电影项目；本地存储未加密</small>{connectionResult && <small className={connectionResult.ok ? "connection-result success" : "connection-result error"}>{connectionResult.ok ? <Check size={12} /> : <AlertCircle size={12} />}{connectionResult.message}</small>}</label>
-            <label><span>视频模型</span><select value={settings.model} disabled={settings.provider !== "minimax"} onChange={(event) => set("model", event.target.value as GenerationSettings["model"])}><option>MiniMax-Hailuo-2.3</option><option>MiniMax-Hailuo-02</option><option>T2V-01-Director</option></select></label>
-            <label><span>分辨率</span><select value={settings.resolution} disabled={settings.provider !== "minimax"} onChange={(event) => set("resolution", event.target.value as GenerationSettings["resolution"])}><option>768P</option><option>1080P</option></select></label>
-            <label><span>单镜头时长</span><select value={settings.duration} disabled={settings.provider !== "minimax"} onChange={(event) => set("duration", Number(event.target.value) as 6 | 10)}><option value={6}>6 秒</option><option value={10}>10 秒</option></select></label>
+            <label><span>视频模型</span><select value={settings.model} disabled={settings.provider === "mock"} onChange={(event) => setModel(event.target.value)}>{activeProvider.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
+            <label><span>分辨率</span><select value={settings.resolution} disabled={settings.provider === "mock"} onChange={(event) => set("resolution", event.target.value)}>{activeModel.capabilities.resolutions.map((resolution) => <option key={resolution}>{resolution}</option>)}</select></label>
+            <label><span>单镜头时长</span><select value={settings.duration} disabled={settings.provider === "mock"} onChange={(event) => set("duration", Number(event.target.value))}>{activeModel.capabilities.durations.map((duration) => <option key={duration} value={duration}>{duration} 秒</option>)}</select></label>
           </div>
+          <div className="capability-list"><span className={activeModel.capabilities.textToVideo ? "supported" : ""}>文生视频</span><span className={activeModel.capabilities.firstFrame ? "supported" : ""}>首帧续拍</span><span className={activeModel.capabilities.lastFrame ? "supported" : ""}>尾帧控制</span><span className={activeModel.capabilities.characterReference ? "supported" : ""}>角色参考</span><span className={activeModel.capabilities.videoReference ? "supported" : ""}>视频参考</span><span className={activeModel.capabilities.seed ? "supported" : ""}>固定种子</span></div>
           <div className="cost-note"><AlertCircle size={15} /><p>真实生成会消耗 MiniMax 账户额度。提交镜头前请确认模型、分辨率和时长。</p></div>
         </section>
       </div>

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getPreviousTimelineShot, isUsableContinuitySource } from "./timeline";
+import { getProviderDefinition } from "./providerRegistry";
 import type { GenerationSettings, MovieProject, Shot } from "../types";
 
 export interface GenerateInput {
@@ -19,6 +20,7 @@ export interface GenerateResult {
 }
 
 export interface VideoProvider {
+  id: string;
   generate(input: GenerateInput): Promise<GenerateResult>;
 }
 
@@ -54,10 +56,23 @@ export function modelForGeneration(model: GenerationSettings["model"], usesFirst
 }
 
 export function getVideoProvider(settings: GenerationSettings): VideoProvider {
-  return settings.provider === "minimax" ? minimaxProvider : mockProvider;
+  const provider = providerAdapters.get(settings.provider);
+  if (!provider) throw new Error(`生成服务“${settings.provider}”尚未安装适配器。`);
+  return provider;
+}
+
+export function getActiveProviderName(settings: GenerationSettings) {
+  return getProviderDefinition(settings.provider)?.name ?? settings.provider;
+}
+
+const providerAdapters = new Map<string, VideoProvider>();
+
+export function registerVideoProvider(provider: VideoProvider) {
+  providerAdapters.set(provider.id, provider);
 }
 
 const mockProvider: VideoProvider = {
+  id: "mock",
   async generate() {
     await delay(2200);
     return { taskId: `mock-${Date.now()}` };
@@ -65,6 +80,7 @@ const mockProvider: VideoProvider = {
 };
 
 const minimaxProvider: VideoProvider = {
+  id: "minimax",
   async generate({ shot, project, settings, apiKey, onTaskCreated, onProgress }) {
     if (!apiKey?.trim()) throw new Error("请先在设置中填写 MiniMax API Key。密钥只保留在本次应用会话中。");
     if (!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
@@ -111,6 +127,9 @@ const minimaxProvider: VideoProvider = {
     throw new Error(`等待生成结果超过 10 分钟。任务 ${taskId} 仍可能在 MiniMax 后台继续，可点击“继续查询”。`);
   },
 };
+
+registerVideoProvider(mockProvider);
+registerVideoProvider(minimaxProvider);
 
 function getOrderedShots(project: MovieProject) {
   const shots = project.scenes.flatMap((scene) => scene.shots);

@@ -55,14 +55,14 @@ export interface MovieProject {
   soundtrack?: AudioTrack;
 }
 
-export type ProviderKind = "mock" | "minimax";
-export type MiniMaxModel = "MiniMax-Hailuo-2.3" | "MiniMax-Hailuo-02" | "T2V-01-Director";
+export type ProviderKind = string;
+export type MiniMaxModel = string;
 
 export interface GenerationSettings {
   provider: ProviderKind;
   directorProvider: "local" | "minimax";
   directorModel: "MiniMax-M3" | "MiniMax-M2.7" | "MiniMax-M2.7-highspeed";
   model: MiniMaxModel;
-  resolution: "768P" | "1080P";
-  duration: 6 | 10;
+  resolution: string;
+  duration: number;
 }
