@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { CharacterAsset, MovieProject, Shot, VisualReference } from "../types";
-import { transitionMode } from "../lib/shotDirection";
+import { actionStart, framingWarning, transitionMode } from "../lib/shotDirection";
 import { archiveShot } from "../lib/continuityFrames";
 import { invalidateAllContinuity, invalidateDownstreamContinuity } from "../lib/timeline";
 
@@ -36,6 +36,8 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     <h3>分镜与角色</h3>
     <label>衔接方式<select disabled={locked} value={transitionMode(shot, project)} onChange={(event) => updateShot({ transitionMode: event.target.value as Shot["transitionMode"] })}><option value="continue">动作延续</option><option value="cut">切换机位</option><option value="scene">转场</option></select></label>
     <p>动作延续默认接上一镜头出点；切换机位或转场使用本镜头确认后的首帧。</p>
+    {framingWarning(shot, project) && <p role="status">{framingWarning(shot, project)}</p>}
+    <ActionEditor key={`${shot.id}-${JSON.stringify(shot.actionPlan)}`} shot={shot} project={project} disabled={locked} onSave={(actionPlan) => updateShot({ actionPlan })} />
     <button disabled={locked} onClick={() => void importImage()}>{shot.firstFrame ? "替换镜头首帧" : "导入镜头首帧"}</button>
     {shot.firstFrame && <><img className="direction-preview" src={convertFileSrc(shot.firstFrame.localPath)} alt={`分镜首帧：${shot.firstFrame.name}`} /><label><input type="checkbox" checked={!!shot.firstFrameApproved} disabled={locked} onChange={(event) => updateShot({ firstFrameApproved: event.target.checked })} />已核对角色、站位和构图</label><button disabled={locked} onClick={() => updateShot({ firstFrame: undefined, firstFrameApproved: false })}>移除首帧引用</button></>}
     <p>当前已接入的视频适配器只传一张首帧。角色图片用于预审，选中角色的文字设定会加入提示词。</p>
@@ -55,4 +57,20 @@ function CharacterEditor({ character, disabled, onSave }: { character: Character
   const [name, setName] = useState(character.name);
   const [description, setDescription] = useState(character.description);
   return <><label>名称<input value={name} maxLength={50} disabled={disabled} onChange={(event) => setName(event.target.value)} /></label><label>固定外观、服装与道具<textarea value={description} maxLength={300} disabled={disabled} onChange={(event) => setDescription(event.target.value)} /></label><button disabled={disabled || !name.trim()} onClick={() => onSave(name.trim(), description.trim())}>保存角色设定</button></>;
+}
+
+function ActionEditor({ shot, project, disabled, onSave }: { shot: Shot; project: MovieProject; disabled: boolean; onSave: (plan: Shot["actionPlan"]) => void }) {
+  const [plan, setPlan] = useState(shot.actionPlan ?? { start: "", action: "", end: "", inheritStart: false });
+  const continuing = transitionMode(shot, project) === "continue";
+  const inherited = actionStart({ ...shot, actionPlan: { ...plan, inheritStart: true } }, project);
+  return <details open={!!shot.actionPlan}><summary>动作起止状态</summary>
+    <p>每镜头安排一个主要动作。结束状态是拍摄目标，请对照生成画面检查后再续拍。</p>
+    {continuing && <label><input type="checkbox" disabled={disabled} checked={plan.inheritStart} onChange={(event) => setPlan({ ...plan, inheritStart: event.target.checked })} />继承上一镜头的结束状态</label>}
+    <label>起始状态<textarea disabled={disabled || continuing && plan.inheritStart} maxLength={180} value={continuing && plan.inheritStart ? inherited : plan.start} placeholder="角色站位、朝向、支撑脚、持物手" onChange={(event) => setPlan({ ...plan, start: event.target.value })} /></label>
+    {continuing && plan.inheritStart && !inherited && <p>上一镜头还没有结束状态，请先填写或改为手动输入。</p>}
+    <label>本镜头动作<textarea disabled={disabled} maxLength={180} value={plan.action} placeholder="例如：右手持剑从右上方向左下方挥落" onChange={(event) => setPlan({ ...plan, action: event.target.value })} /></label>
+    <label>结束状态<textarea disabled={disabled} maxLength={180} value={plan.end} placeholder="例如：左脚在前站稳，剑尖朝左下方" onChange={(event) => setPlan({ ...plan, end: event.target.value })} /></label>
+    <button disabled={disabled || continuing && plan.inheritStart && !inherited} onClick={() => onSave(plan)}>保存动作设计</button>
+    {shot.actionPlan && <button disabled={disabled} onClick={() => onSave(undefined)}>移除动作设计</button>}
+  </details>;
 }

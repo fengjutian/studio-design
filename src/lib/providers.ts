@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getPreviousTimelineShot, isUsableContinuitySource } from "./timeline";
 import { getProviderDefinition } from "./providerRegistry";
 import { continuityFrameTime } from "./continuityFrames";
-import { firstFrameIssue, transitionMode, usesPreviousFrame } from "./shotDirection";
+import { actionStart, firstFrameIssue, transitionMode, usesPreviousFrame } from "./shotDirection";
 import type { GenerationSettings, MovieProject, Shot } from "../types";
 
 export interface GenerateInput {
@@ -43,6 +43,10 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
     transitionMode(shot, project) === "scene" && "NEW SCENE: establish the specified location and opening composition. Preserve character identity; do not carry over the previous background or action.",
     ...(project.characters ?? []).filter((character) => shot.characterIds?.includes(character.id)).map((character) => `CHARACTER ${character.name}: ${character.description}`),
     `CURRENT SHOT: ${shot.description}`,
+    actionStart(shot, project) && `ACTION START STATE: ${actionStart(shot, project)}`,
+    shot.actionPlan?.action.trim() && `PRIMARY ACTION: ${shot.actionPlan.action.trim()}. Perform this single action; do not add unrelated attacks, jumps or turns.`,
+    shot.actionPlan?.end.trim() && `TARGET END STATE: ${shot.actionPlan.end.trim()}. Reach this state within the first ${Math.min(shot.trimEnd ?? shot.duration, shot.duration)} seconds used by the edit.`,
+    shot.actionPlan && "Maintain movement direction, supporting foot, weapon hand and action phase. Do not reset the pose at the opening. These are planned states; follow the reference image where physical details differ.",
     `Cinematic ${shot.framing}, ${project.visualStyle}.`,
     motion,
     "Temporal continuity, consistent subject appearance, coherent physical motion, no jump in wardrobe or environment, no subtitles, no watermark.",

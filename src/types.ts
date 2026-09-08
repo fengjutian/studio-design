@@ -25,6 +25,7 @@ export interface Shot {
   trimEnd?: number;
   versions?: ShotVersion[];
   transitionMode?: "continue" | "cut" | "scene";
+  actionPlan?: { start: string; action: string; end: string; inheritStart: boolean };
   firstFrame?: VisualReference;
   firstFrameApproved?: boolean;
   characterIds?: string[];
