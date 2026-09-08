@@ -14,9 +14,12 @@ export interface Shot {
   videoUrl?: string;
   localAssetPath?: string;
   taskId?: string;
+  generationProviderId?: string;
+  generationModelId?: string;
   generationStartedAt?: string;
   generationError?: string;
   continuitySourceShotId?: string;
+  visualReferenceName?: string;
   continuityStale?: boolean;
   trimStart?: number;
   trimEnd?: number;
@@ -29,6 +32,11 @@ export interface AudioTrack {
   duration: number;
   trimStart: number;
   volume: number;
+}
+
+export interface VisualReference {
+  name: string;
+  localPath: string;
 }
 
 export interface Scene {
@@ -53,6 +61,7 @@ export interface MovieProject {
   timelineOrder?: string[];
   lastExportPath?: string;
   soundtrack?: AudioTrack;
+  visualReference?: VisualReference;
 }
 
 export type ProviderKind = string;

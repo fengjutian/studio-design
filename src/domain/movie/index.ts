@@ -7,4 +7,5 @@ export type {
   ProviderKind,
   Scene,
   Shot,
+  VisualReference,
 } from "@/types";

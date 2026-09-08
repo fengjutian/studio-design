@@ -23,6 +23,14 @@ export function isUsableContinuitySource(shot: Shot | undefined) {
   return Boolean(shot && shot.generationStatus === "completed" && !shot.continuityStale && (shot.localAssetPath || shot.videoUrl));
 }
 
+export function sharesSceneWithPrevious(project: MovieProject, shotId: string) {
+  const previous = getPreviousTimelineShot(project, shotId);
+  if (!previous) return false;
+  const sceneId = project.scenes.find((scene) => scene.shots.some((shot) => shot.id === shotId))?.id;
+  const previousSceneId = project.scenes.find((scene) => scene.shots.some((shot) => shot.id === previous.id))?.id;
+  return Boolean(sceneId && sceneId === previousSceneId);
+}
+
 export function invalidateDownstreamContinuity(project: MovieProject, shotId: string): MovieProject {
   const ordered = getTimelineShots(project);
   const sourceIndex = ordered.findIndex((shot) => shot.id === shotId);
@@ -33,6 +41,16 @@ export function invalidateDownstreamContinuity(project: MovieProject, shotId: st
     scenes: project.scenes.map((scene) => ({
       ...scene,
       shots: scene.shots.map((shot) => staleIds.has(shot.id) && shot.generationStatus === "completed" ? { ...shot, continuityStale: true } : shot),
+    })),
+  };
+}
+
+export function invalidateAllContinuity(project: MovieProject): MovieProject {
+  return {
+    ...project,
+    scenes: project.scenes.map((scene) => ({
+      ...scene,
+      shots: scene.shots.map((shot) => shot.generationStatus === "completed" ? { ...shot, continuityStale: true } : shot),
     })),
   };
 }

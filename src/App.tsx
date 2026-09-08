@@ -33,7 +33,7 @@ import { developIdea, expandIdea } from "@/features/director";
 import { getActiveProviderName, getModelDefinition, getProviderDefinition, getVideoProvider, providerDefinitions, selectProvider, supportedVideoDuration } from "@/features/generation";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "@/features/projects";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
-import { getPreviousTimelineShot, getTimelineShots, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, shotPlaybackDuration } from "@/features/timeline";
+import { getPreviousTimelineShot, getTimelineShots, invalidateAllContinuity, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, sharesSceneWithPrevious, shotPlaybackDuration } from "@/features/timeline";
 import { loadApiKey, loadIdeaDraft, loadProjects, loadSettings, saveApiKey, saveIdeaDraft, saveProjects, saveSettings } from "@/features/projects";
 import type { GenerationSettings, MovieProject, Shot } from "@/domain/movie";
 import type { AppView as View } from "@/app/navigation";
@@ -366,7 +366,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
   const selectedSource = (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined) ?? selected?.videoUrl;
   const previousShot = selected ? getPreviousTimelineShot(project, selected.id) : undefined;
-  const continuityBlocked = Boolean(previousShot && !isUsableContinuitySource(previousShot));
+  const sameSceneTransition = Boolean(selected && sharesSceneWithPrevious(project, selected.id));
+  const continuityBlocked = Boolean(sameSceneTransition && !isUsableContinuitySource(previousShot));
 
   useEffect(() => setMediaErrorShotId(null), [selected?.id, selectedSource]);
 
@@ -392,6 +393,10 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     if (!selected) return;
     if (continuityBlocked) return;
     const generationShot = forceNew ? { ...selected, taskId: undefined } : selected;
+    const taskSettings = !forceNew && selected.taskId && selected.generationProviderId
+      ? { ...settings, provider: selected.generationProviderId, model: selected.generationModelId ?? settings.model }
+      : settings;
+    const taskProviderName = getActiveProviderName(taskSettings);
     const generationProject = forceNew ? invalidateDownstreamContinuity(project, selected.id) : project;
     let currentTaskId = generationShot.taskId;
     setActiveGenerationId(selected.id);
@@ -402,21 +407,21 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
       updatedAt: new Date().toISOString(),
       scenes: generationProject.scenes.map((scene) => ({
         ...scene,
-        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: forceNew ? undefined : shot.taskId, generationStatus: "generating", generationStartedAt: new Date().toISOString(), generationError: undefined } : shot),
+        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: forceNew ? undefined : shot.taskId, generationProviderId: taskSettings.provider, generationModelId: taskSettings.model, generationStatus: "generating", generationStartedAt: new Date().toISOString(), generationError: undefined } : shot),
       })),
     });
     try {
-      const result = await getVideoProvider(settings).generate({
+      const result = await getVideoProvider(taskSettings).generate({
         shot: generationShot,
         project: generationProject,
-        settings,
+        settings: taskSettings,
         apiKey,
         onTaskCreated: (taskId) => {
           currentTaskId = taskId;
-          setGenerationProgress(`任务已提交（${taskId}），等待 ${providerName} 处理…`);
-          onUpdate({ ...generationProject, status: "生成中", updatedAt: new Date().toISOString(), scenes: generationProject.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString() } : shot) })) });
+          setGenerationProgress(`任务已提交（${taskId}），等待 ${taskProviderName} 处理…`);
+          onUpdate({ ...generationProject, status: "生成中", updatedAt: new Date().toISOString(), scenes: generationProject.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId, generationProviderId: taskSettings.provider, generationModelId: taskSettings.model, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString() } : shot) })) });
         },
-        onProgress: (status, elapsedSeconds) => setGenerationProgress(`${providerName} 状态：${status} · 已等待 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒`),
+        onProgress: (status, elapsedSeconds) => setGenerationProgress(`${taskProviderName} 状态：${status} · 已等待 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒`),
       });
       onUpdate({
         ...generationProject,
@@ -428,9 +433,12 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             ...shot,
             generationStatus: "completed",
             taskId: result.taskId,
+            generationProviderId: taskSettings.provider,
+            generationModelId: taskSettings.model,
             videoUrl: result.videoUrl,
             localAssetPath: result.localAssetPath,
             continuitySourceShotId: result.continuitySourceShotId,
+            visualReferenceName: result.visualReferenceName,
             continuityStale: false,
             trimStart: 0,
             trimEnd: selected.duration,
@@ -540,6 +548,20 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     }
   };
 
+  const importVisualReference = async () => {
+    if (!project.localPath) { onSaveAs(); return; }
+    try {
+      const result = await invoke<{ path: string; name: string } | null>("import_visual_reference", { projectPath: project.localPath });
+      if (result) {
+        const invalidated = invalidateAllContinuity(project);
+        onUpdate({ ...invalidated, visualReference: { localPath: result.path, name: result.name }, updatedAt: new Date().toISOString() });
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+      setExportOpen(true);
+    }
+  };
+
   return (
     <div className="studio-view">
       <header className="studio-header workspace-header">
@@ -568,7 +590,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         </aside>
 
         <section className="canvas-panel">
-          <div className="canvas-toolbar"><span>镜头 {String(selected?.number ?? 1).padStart(2, "0")}</span><div>{selected?.generationStatus === "completed" && <button type="button" title="创建一个新的生成任务，可能产生费用" onClick={() => void generate(true)}><RotateCcw size={15} /> 重新生成</button>}<button><MoreHorizontal size={17} /></button></div></div>
+          <div className="canvas-toolbar"><span>镜头 {String(selected?.number ?? 1).padStart(2, "0")}</span><div><button type="button" title="为首镜头和每个新场景锁定角色与美术风格" onClick={importVisualReference}><Film size={15} /> {project.visualReference ? "更换视觉基准" : "设置视觉基准"}</button>{selected?.generationStatus === "completed" && <button type="button" title="创建一个新的生成任务，可能产生费用" onClick={() => void generate(true)}><RotateCcw size={15} /> 重新生成</button>}<button><MoreHorizontal size={17} /></button></div></div>
           <div className="preview-canvas">
             <div className="frame-lines" />
             {continuityBlocked ? (
@@ -584,11 +606,11 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             ) : selected?.generationStatus === "failed" ? (
               <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={() => void generate(selected.taskId ? false : true)}><RotateCcw size={16} /> {selected.taskId ? "继续查询" : "再试一次"}</button></div>
             ) : (
-              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>{previousShot ? `将自动使用“${previousShot.title}”的尾帧续拍。` : "这是时间线首镜头，将根据导演设定建立视觉基准。"}</p><button className="primary-button" onClick={() => void generate(true)}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
+              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>{sameSceneTransition && previousShot ? `将自动使用“${previousShot.title}”的尾帧续拍。` : project.visualReference ? `将使用项目视觉基准“${project.visualReference.name}”建立这个场景。` : "尚未设置视觉基准，将仅根据导演设定生成。"}</p><button className="primary-button" onClick={() => void generate(true)}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
             )}
           </div>
           {selected?.generationStatus === "completed" && selectedSource && <div className="trim-editor"><span><Scissors size={13} /> 裁剪</span><label>入点 <input type="range" min={0} max={Math.max(.2, (selected.trimEnd ?? selected.duration) - .1)} step="0.1" value={selected.trimStart ?? 0} onChange={(event) => updateTrim("trimStart", Number(event.target.value))} /><b>{(selected.trimStart ?? 0).toFixed(1)}s</b></label><label>出点 <input type="range" min={Math.min(selected.duration - .1, (selected.trimStart ?? 0) + .1)} max={selected.duration} step="0.1" value={selected.trimEnd ?? selected.duration} onChange={(event) => updateTrim("trimEnd", Number(event.target.value))} /><b>{(selected.trimEnd ?? selected.duration).toFixed(1)}s</b></label></div>}
-          <div className="shot-description"><span>导演意图</span><p>{selected?.description}</p><div>{selected?.continuitySourceShotId && <span title="生成时使用了上一镜头的尾帧">尾帧续拍</span>}<span>{selected?.framing}</span><span>{selected?.movement}</span><span>{selected?.duration} 秒</span></div></div>
+          <div className="shot-description"><span>导演意图</span><p>{selected?.description}</p><div>{selected?.continuitySourceShotId ? <span title="生成时使用了上一镜头的尾帧">尾帧续拍</span> : selected?.visualReferenceName && <span title={`使用视觉基准：${selected.visualReferenceName}`}>视觉基准</span>}<span>{selected?.framing}</span><span>{selected?.movement}</span><span>{selected?.duration} 秒</span></div></div>
         </section>
 
         <aside className="director-panel">

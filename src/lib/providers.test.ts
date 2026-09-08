@@ -24,6 +24,16 @@ describe("getContinuitySource", () => {
     expect(getContinuitySource(second, project)?.id).toBe(first.id);
     expect(getContinuitySource(first, project)).toBeUndefined();
   });
+
+  it("does not carry an action tail frame across scene boundaries", () => {
+    const project = createDirectorProposal("少年在雨夜的上海街头奔跑");
+    const previous = project.scenes[0].shots[project.scenes[0].shots.length - 1];
+    const nextSceneShot = { ...project.scenes[0].shots[0], id: "next-scene-shot" };
+    project.scenes.push({ ...project.scenes[0], id: "next-scene", number: 2, shots: [nextSceneShot] });
+    previous.generationStatus = "completed";
+    previous.localAssetPath = "previous.mp4";
+    expect(getContinuitySource(nextSceneShot, project)).toBeUndefined();
+  });
 });
 
 describe("supportedVideoDuration", () => {

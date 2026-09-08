@@ -1,1 +1,1 @@
-export { getPreviousTimelineShot, getTimelineShots, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, shotPlaybackDuration } from "@/lib/timeline";
+export { getPreviousTimelineShot, getTimelineShots, invalidateAllContinuity, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, sharesSceneWithPrevious, shotPlaybackDuration } from "@/lib/timeline";

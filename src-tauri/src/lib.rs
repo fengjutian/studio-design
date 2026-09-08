@@ -85,6 +85,13 @@ struct ImportedAudio {
     duration: f64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportedImage {
+    path: String,
+    name: String,
+}
+
 #[derive(Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<ChatChoice>,
@@ -256,6 +263,59 @@ async fn import_audio(project_path: String) -> Result<Option<ImportedAudio>, Str
     })
     .await
     .map_err(|error| format!("Import audio task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn import_visual_reference(project_path: String) -> Result<Option<ImportedImage>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let project = std::fs::canonicalize(project_path)
+            .map_err(|error| format!("Cannot access project directory: {error}"))?;
+        if !project.join("project.json").is_file() {
+            return Err("Save the movie as a local project before importing a visual reference.".into());
+        }
+        let Some(source) = rfd::FileDialog::new()
+            .set_title("Import visual reference")
+            .add_filter("Image", &["jpg", "jpeg", "png", "webp"])
+            .pick_file()
+        else {
+            return Ok(None);
+        };
+        let extension = source.extension().and_then(|value| value.to_str()).unwrap_or("jpg");
+        let stem = source.file_stem().and_then(|value| value.to_str()).unwrap_or("visual-reference");
+        let destination = unique_asset_path(&project.join("assets"), &safe_folder_name(stem), extension);
+        std::fs::copy(&source, &destination)
+            .map_err(|error| format!("Cannot copy visual reference into project: {error}"))?;
+        Ok(Some(ImportedImage {
+            path: destination.to_string_lossy().into_owned(),
+            name: source.file_name().and_then(|value| value.to_str()).unwrap_or("Visual reference").to_string(),
+        }))
+    })
+    .await
+    .map_err(|error| format!("Import visual reference task failed: {error}"))?
+}
+
+#[tauri::command]
+fn read_project_image_data_url(project_path: String, path: String) -> Result<String, String> {
+    let project = std::fs::canonicalize(project_path)
+        .map_err(|error| format!("Cannot access project directory: {error}"))?;
+    let assets = std::fs::canonicalize(project.join("assets"))
+        .map_err(|error| format!("Cannot access project assets: {error}"))?;
+    let image = std::fs::canonicalize(path)
+        .map_err(|error| format!("Cannot access visual reference: {error}"))?;
+    if !image.starts_with(&assets) || !image.is_file() {
+        return Err("Visual reference must be an image inside this project's assets directory.".into());
+    }
+    let mime = match image.extension().and_then(|value| value.to_str()).map(str::to_ascii_lowercase).as_deref() {
+        Some("png") => "image/png",
+        Some("webp") => "image/webp",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        _ => return Err("Unsupported visual reference format.".into()),
+    };
+    let bytes = std::fs::read(&image).map_err(|error| format!("Cannot read visual reference: {error}"))?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err("Visual reference must be smaller than 20 MB.".into());
+    }
+    Ok(format!("data:{mime};base64,{}", encode_base64(&bytes)))
 }
 
 #[tauri::command]
@@ -716,6 +776,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             allow_project_assets,
             import_audio,
+            import_visual_reference,
+            read_project_image_data_url,
             create_project_directory,
             open_project_file,
             save_project_file,

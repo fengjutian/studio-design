@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getPreviousTimelineShot, isUsableContinuitySource } from "./timeline";
+import { getPreviousTimelineShot, isUsableContinuitySource, sharesSceneWithPrevious } from "./timeline";
 import { getProviderDefinition } from "./providerRegistry";
 import type { GenerationSettings, MovieProject, Shot } from "../types";
 
@@ -17,6 +17,7 @@ export interface GenerateResult {
   videoUrl?: string;
   localAssetPath?: string;
   continuitySourceShotId?: string;
+  visualReferenceName?: string;
 }
 
 export interface VideoProvider {
@@ -44,7 +45,8 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
 
 export function getContinuitySource(shot: Shot, project: MovieProject): Shot | undefined {
   const previous = getPreviousTimelineShot(project, shot.id);
-  return isUsableContinuitySource(previous) ? previous : undefined;
+  if (!isUsableContinuitySource(previous)) return undefined;
+  return sharesSceneWithPrevious(project, shot.id) ? previous : undefined;
 }
 
 export function supportedVideoDuration(shotDuration: number): 6 | 10 {
@@ -95,6 +97,9 @@ const minimaxProvider: VideoProvider = {
       if (source) {
         onProgress?.("正在提取上一镜头尾帧", 0);
         firstFrameImage = await invoke<string>("extract_video_last_frame", { source });
+      } else if (project.visualReference && project.localPath) {
+        onProgress?.("正在载入项目视觉基准帧", 0);
+        firstFrameImage = await invoke<string>("read_project_image_data_url", { projectPath: project.localPath, path: project.visualReference.localPath });
       }
     }
 
@@ -120,7 +125,13 @@ const minimaxProvider: VideoProvider = {
         const localAssetPath = project.localPath
           ? await invoke<string>("download_generation", { projectPath: project.localPath, shotId: shot.id, url: videoUrl })
           : undefined;
-        return { taskId, videoUrl, localAssetPath, continuitySourceShotId: continuitySource?.id ?? shot.continuitySourceShotId };
+        return {
+          taskId,
+          videoUrl,
+          localAssetPath,
+          continuitySourceShotId: continuitySource?.id ?? shot.continuitySourceShotId,
+          visualReferenceName: (!continuitySource && firstFrameImage ? project.visualReference?.name : undefined) ?? shot.visualReferenceName,
+        };
       }
       if (["Fail", "Failed"].includes(result.status)) throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
     }
