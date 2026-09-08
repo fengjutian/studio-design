@@ -66,6 +66,7 @@ export interface Scene {
 }
 
 export interface MovieProject {
+  directorStyle?: DirectorStyle;
   id: string;
   title: string;
   idea: string;
@@ -80,6 +81,13 @@ export interface MovieProject {
   soundtrack?: AudioTrack;
   visualReference?: VisualReference;
   characters?: CharacterAsset[];
+}
+
+export interface DirectorStyle {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
 }
 
 export type ProviderKind = string;

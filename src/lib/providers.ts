@@ -43,6 +43,7 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
     transitionMode(shot, project) === "scene" && "NEW SCENE: establish the specified location and opening composition. Preserve character identity; do not carry over the previous background or action.",
     ...(project.characters ?? []).filter((character) => shot.characterIds?.includes(character.id)).map((character) => `CHARACTER ${character.name}: ${character.description}`),
     `CURRENT SHOT: ${shot.description}`,
+    project.directorStyle?.prompt && `DIRECTOR STYLE (${project.directorStyle.name}): ${project.directorStyle.prompt}. Apply to presentation only; preserve this shot's action, character identity and approved composition.`,
     actionStart(shot, project) && `ACTION START STATE: ${actionStart(shot, project)}`,
     shot.actionPlan?.action.trim() && `PRIMARY ACTION: ${shot.actionPlan.action.trim()}. Perform this single action; do not add unrelated attacks, jumps or turns.`,
     shot.actionPlan?.end.trim() && `TARGET END STATE: ${shot.actionPlan.end.trim()}. Reach this state within the first ${Math.min(shot.trimEnd ?? shot.duration, shot.duration)} seconds used by the edit.`,

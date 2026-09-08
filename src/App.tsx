@@ -44,6 +44,9 @@ import { showContinuityWarnings } from "./lib/generationDisplay";
 import { ShotDirectionPanel } from "./components/ShotDirectionPanel";
 import { firstFrameIssue, usesPreviousFrame } from "./lib/shotDirection";
 import { archiveShot, continuityFrameTime } from "./lib/continuityFrames";
+import { DirectorStylesView } from "./components/DirectorStylesView";
+import { loadDirectorStyles, saveDirectorStyles } from "./lib/directorStyles";
+import type { DirectorStyle } from "./types";
 
 const prompts = [
   "一封迟到了十年的信，在海边小镇找到收件人",
@@ -67,6 +70,8 @@ export default function App() {
   const [settings, setSettings] = useState<GenerationSettings>(loadSettings);
   const [apiKey, setApiKey] = useState(loadApiKey);
   const [notice, setNotice] = useState<string | null>(null);
+  const [directorStyles, setDirectorStyles] = useState(loadDirectorStyles);
+  useEffect(() => saveDirectorStyles(directorStyles), [directorStyles]);
 
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveSettings(settings), [settings]);
@@ -161,7 +166,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppRail view={view} onHome={goHome} onMovies={() => setView("movies")} onAssets={() => setView("assets")} onSettings={() => setView("settings")} />
+      <AppRail view={view} onHome={goHome} onMovies={() => setView("movies")} onAssets={() => setView("assets")} onStyles={() => setView("styles")} onSettings={() => setView("settings")} />
       <main className="main-stage">
         {view === "home" && (
           <HomeView
@@ -182,8 +187,10 @@ export default function App() {
         )}
         {view === "movies" && <MoviesView projects={projects} onOpen={openProject} onOpenFile={openLocalProject} />}
         {view === "assets" && <AssetsView projects={projects} onOpen={openProject} />}
+        {view === "styles" && <DirectorStylesView styles={directorStyles} onChange={setDirectorStyles} />}
         {view === "studio" && active && (
           <StudioView
+            directorStyles={directorStyles}
             project={active}
             selectedShotId={selectedShotId}
             onSelectShot={setSelectedShotId}
@@ -341,6 +348,7 @@ function ProposalView({ project, onBack, onAccept }: { project: MovieProject; on
 }
 
 interface StudioProps {
+  directorStyles: DirectorStyle[];
   project: MovieProject;
   selectedShotId: string | null;
   onSelectShot: (id: string) => void;
@@ -351,7 +359,7 @@ interface StudioProps {
   onSaveAs: () => void;
 }
 
-function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, settings, apiKey, onSaveAs }: StudioProps) {
+function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, settings, apiKey, onSaveAs, directorStyles }: StudioProps) {
   const providerName = getActiveProviderName(settings);
   const [directorMode, setDirectorMode] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -640,6 +648,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         <aside className="director-panel">
           <div className="panel-heading"><span><Sparkles size={15} /> AI 导演</span><div className="mode-switch"><button className={!directorMode ? "active" : ""} onClick={() => setDirectorMode(false)}>普通</button><button className={directorMode ? "active" : ""} onClick={() => setDirectorMode(true)}>导演</button></div></div>
           <div className="director-conversation">
+            <section className="shot-direction"><h3>电影导演风格</h3><select aria-label="选择导演风格" disabled={!!activeGenerationId} value="" onChange={(event) => { const style = directorStyles.find((item) => item.id === event.target.value); onUpdate({ ...invalidateAllContinuity(project), directorStyle: style ? { ...style } : undefined, updatedAt: new Date().toISOString() }); }}><option value="" disabled>选择或更新风格…</option><option value="none">不使用导演风格</option>{directorStyles.map((style) => <option value={style.id} key={style.id}>{style.name}</option>)}</select><p>当前：{project.directorStyle?.name ?? "未启用"}</p>{project.directorStyle && <details><summary>查看生成指令</summary><p>{project.directorStyle.prompt}</p></details>}<p>应用于整部电影的新生成任务；更换后已有镜头会标记为需重生成。</p></section>
             {selected && <ShotDirectionPanel key={`${project.id}-${selected.id}`} project={project} shot={selected} disabled={!!activeGenerationId} onUpdate={onUpdate} onSave={onSaveAs} />}
             {selected && <ContinuityTools shot={selected} disabled={!!activeGenerationId} onCut={(seconds) => updateTrim("trimEnd", seconds)} onRestore={restoreVersion} />}
             <div className="ai-message"><span>AI 导演助手</span><p>这是<strong>{selected?.title}</strong>。{selected?.description}</p><p>我会使用{selected?.framing}和{selected?.movement}，让画面延续“{project.visualStyle}”的感觉。</p></div>
