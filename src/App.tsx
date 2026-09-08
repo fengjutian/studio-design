@@ -40,6 +40,7 @@ import type { AppView as View } from "@/app/navigation";
 import { AppRail } from "@/app/AppRail";
 import { AssetsView, MoviesView } from "@/features/library";
 import { ContinuityTools } from "./components/ContinuityTools";
+import { showContinuityWarnings } from "./lib/generationDisplay";
 import { ShotDirectionPanel } from "./components/ShotDirectionPanel";
 import { firstFrameIssue, usesPreviousFrame } from "./lib/shotDirection";
 import { archiveShot, continuityFrameTime } from "./lib/continuityFrames";
@@ -614,11 +615,11 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="canvas-toolbar"><span>镜头 {String(selected?.number ?? 1).padStart(2, "0")}</span><div><button type="button" title="为首镜头和每个新场景锁定角色与美术风格" onClick={importVisualReference}><Film size={15} /> {project.visualReference ? "更换视觉基准" : "设置视觉基准"}</button>{selected?.generationStatus === "completed" && <button type="button" title="创建一个新的生成任务，可能产生费用" onClick={() => void generate(true)}><RotateCcw size={15} /> 重新生成</button>}<button><MoreHorizontal size={17} /></button></div></div>
           <div className="preview-canvas">
             <div className="frame-lines" />
-            {directionIssue ? (
+            {showContinuityWarnings(selected) && directionIssue ? (
               <div className="generation-recovery"><h3>确认镜头首帧</h3><p>{directionIssue}</p></div>
-            ) : continuityBlocked ? (
+            ) : showContinuityWarnings(selected) && continuityBlocked ? (
               <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">CONTINUITY CHAIN BROKEN</span><h3>请先完成上一镜头</h3><p>“{previousShot?.title}”尚未生成、素材不可用或连续性已经过期。为保证尾帧续拍，当前镜头暂不能生成。</p></div>
-            ) : selected?.continuityStale ? (
+            ) : showContinuityWarnings(selected) && selected?.continuityStale ? (
               <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">CONTINUITY OUTDATED</span><h3>连续性参考已经过期</h3><p>前序镜头发生了变化，这个视频仍基于旧画面生成。请重新生成以接续最新尾帧。</p><div className="recovery-actions"><button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 按最新尾帧重新生成</button></div></div>
             ) : selected?.generationStatus === "completed" ? (
               selectedSource && mediaErrorShotId !== selected.id ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onError={() => { setPlayingTimeline(false); setMediaErrorShotId(selected.id); }} onLoadedData={() => setMediaErrorShotId(null)} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">VIDEO LINK EXPIRED</span><h3>视频链接已经失效</h3><p>{selected.taskId ? "原生成任务还在，可以先重新获取；也可以创建一个全新视频任务。" : "旧视频无法恢复，可以重新生成这个镜头。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="secondary-button compact" onClick={() => void generate()}><RotateCcw size={15} /> 重新获取</button>}<button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 重新生成</button></div></div>
