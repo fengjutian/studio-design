@@ -227,6 +227,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .mode-switch button { border: 0; border-radius: 4px; background: transparent; padding: 4px 7px; font-size: 8px; color: #5e5d59; cursor: pointer; }
 .mode-switch button.active { color: #bbb8b1; background: #272729; }
 .director-conversation { flex: 1; overflow: auto; padding: 16px 13px; }
+.shot-direction { display: grid; gap: 9px; background: #18181a; padding: 12px; margin-bottom: 12px; color: #b5b4ae; font-size: 11px; }
+.shot-direction h3 { margin: 0; font-size: 13px; color: var(--accent); }
+.shot-direction p { margin: 0; line-height: 1.6; color: #99968e; }
+.shot-direction label { display: grid; gap: 6px; }
+.shot-direction input:not([type=checkbox]), .shot-direction textarea, .shot-direction select, .shot-direction button { box-sizing: border-box; width: 100%; background: #252527; color: #ddd; border: 1px solid #45453e; padding: 7px; border-radius: 5px; }
+.shot-direction button, .shot-direction summary { cursor: pointer; }
+.shot-direction button:disabled { opacity: .4; cursor: default; }
+.shot-direction details > * { margin-top: 9px; }
+.direction-preview { display: block; width: 100%; max-height: 240px; object-fit: contain; background: #111; }
 .continuity-tools { display: grid; gap: 9px; padding: 12px; margin-bottom: 12px; background: #18181a; color: #aaa; font-size: 11px; }
 .continuity-tools button, .continuity-tools select { background: #252527; color: #d0d0cb; border: 1px solid #45453e; padding: 7px; border-radius: 5px; cursor: pointer; max-width: 100%; }
 .continuity-tools button:disabled { opacity: .4; cursor: default; }

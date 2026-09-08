@@ -40,6 +40,8 @@ import type { AppView as View } from "@/app/navigation";
 import { AppRail } from "@/app/AppRail";
 import { AssetsView, MoviesView } from "@/features/library";
 import { ContinuityTools } from "./components/ContinuityTools";
+import { ShotDirectionPanel } from "./components/ShotDirectionPanel";
+import { firstFrameIssue, usesPreviousFrame } from "./lib/shotDirection";
 import { archiveShot, continuityFrameTime } from "./lib/continuityFrames";
 
 const prompts = [
@@ -368,8 +370,9 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
   const selectedSource = (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined) ?? selected?.videoUrl;
   const previousShot = selected ? getPreviousTimelineShot(project, selected.id) : undefined;
-  const sameSceneTransition = Boolean(selected && sharesSceneWithPrevious(project, selected.id));
+  const sameSceneTransition = Boolean(selected && usesPreviousFrame(selected, project));
   const continuityBlocked = Boolean(sameSceneTransition && !isUsableContinuitySource(previousShot));
+  const directionIssue = selected ? firstFrameIssue(selected) : undefined;
 
   useEffect(() => setMediaErrorShotId(null), [selected?.id, selectedSource]);
 
@@ -393,7 +396,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
 
   const generate = async (forceNew = false) => {
     if (!selected || activeGenerationId) return;
-    if (continuityBlocked) return;
+    if (continuityBlocked || directionIssue) return;
     const generationShot = forceNew ? { ...selected, taskId: undefined, continuitySourceShotId: undefined, visualReferenceName: undefined } : selected;
     const taskSettings = !forceNew && selected.taskId && selected.generationProviderId
       ? { ...settings, provider: selected.generationProviderId, model: selected.generationModelId ?? settings.model }
@@ -442,6 +445,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             localAssetPath: result.localAssetPath,
             continuitySourceShotId: result.continuitySourceShotId,
             visualReferenceName: result.visualReferenceName,
+            generatedFirstFramePath: result.generatedFirstFramePath,
             continuityStale: false,
             trimStart: 0,
             trimEnd: selected.duration,
@@ -610,7 +614,9 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="canvas-toolbar"><span>镜头 {String(selected?.number ?? 1).padStart(2, "0")}</span><div><button type="button" title="为首镜头和每个新场景锁定角色与美术风格" onClick={importVisualReference}><Film size={15} /> {project.visualReference ? "更换视觉基准" : "设置视觉基准"}</button>{selected?.generationStatus === "completed" && <button type="button" title="创建一个新的生成任务，可能产生费用" onClick={() => void generate(true)}><RotateCcw size={15} /> 重新生成</button>}<button><MoreHorizontal size={17} /></button></div></div>
           <div className="preview-canvas">
             <div className="frame-lines" />
-            {continuityBlocked ? (
+            {directionIssue ? (
+              <div className="generation-recovery"><h3>确认镜头首帧</h3><p>{directionIssue}</p></div>
+            ) : continuityBlocked ? (
               <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">CONTINUITY CHAIN BROKEN</span><h3>请先完成上一镜头</h3><p>“{previousShot?.title}”尚未生成、素材不可用或连续性已经过期。为保证尾帧续拍，当前镜头暂不能生成。</p></div>
             ) : selected?.continuityStale ? (
               <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">CONTINUITY OUTDATED</span><h3>连续性参考已经过期</h3><p>前序镜头发生了变化，这个视频仍基于旧画面生成。请重新生成以接续最新尾帧。</p><div className="recovery-actions"><button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 按最新尾帧重新生成</button></div></div>
@@ -633,6 +639,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         <aside className="director-panel">
           <div className="panel-heading"><span><Sparkles size={15} /> AI 导演</span><div className="mode-switch"><button className={!directorMode ? "active" : ""} onClick={() => setDirectorMode(false)}>普通</button><button className={directorMode ? "active" : ""} onClick={() => setDirectorMode(true)}>导演</button></div></div>
           <div className="director-conversation">
+            {selected && <ShotDirectionPanel key={`${project.id}-${selected.id}`} project={project} shot={selected} disabled={!!activeGenerationId} onUpdate={onUpdate} onSave={onSaveAs} />}
             {selected && <ContinuityTools shot={selected} disabled={!!activeGenerationId} onCut={(seconds) => updateTrim("trimEnd", seconds)} onRestore={restoreVersion} />}
             <div className="ai-message"><span>AI 导演助手</span><p>这是<strong>{selected?.title}</strong>。{selected?.description}</p><p>我会使用{selected?.framing}和{selected?.movement}，让画面延续“{project.visualStyle}”的感觉。</p></div>
             {directorMode && <div className="pro-controls"><span>镜头规格</span><label>摄影机<input value={selected?.framing ?? ""} readOnly /></label><label>运镜<input value={selected?.movement ?? ""} readOnly /></label><label>视觉风格<textarea value={project.visualStyle} readOnly /></label><label>生成引擎<input value={`${providerName} · ${settings.model}`} readOnly /></label></div>}

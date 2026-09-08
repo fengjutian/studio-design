@@ -24,6 +24,11 @@ export interface Shot {
   trimStart?: number;
   trimEnd?: number;
   versions?: ShotVersion[];
+  transitionMode?: "continue" | "cut" | "scene";
+  firstFrame?: VisualReference;
+  firstFrameApproved?: boolean;
+  characterIds?: string[];
+  generatedFirstFramePath?: string;
   sourceFrame?: { shotId: string; taskId?: string; path?: string; seconds: number };
 }
 
@@ -41,6 +46,13 @@ export interface AudioTrack {
 export interface VisualReference {
   name: string;
   localPath: string;
+}
+
+export interface CharacterAsset {
+  id: string;
+  name: string;
+  description: string;
+  images: VisualReference[];
 }
 
 export interface Scene {
@@ -66,6 +78,7 @@ export interface MovieProject {
   lastExportPath?: string;
   soundtrack?: AudioTrack;
   visualReference?: VisualReference;
+  characters?: CharacterAsset[];
 }
 
 export type ProviderKind = string;

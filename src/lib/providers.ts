@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getPreviousTimelineShot, isUsableContinuitySource, sharesSceneWithPrevious } from "./timeline";
+import { getPreviousTimelineShot, isUsableContinuitySource } from "./timeline";
 import { getProviderDefinition } from "./providerRegistry";
 import { continuityFrameTime } from "./continuityFrames";
+import { firstFrameIssue, transitionMode, usesPreviousFrame } from "./shotDirection";
 import type { GenerationSettings, MovieProject, Shot } from "../types";
 
 export interface GenerateInput {
@@ -19,6 +20,7 @@ export interface GenerateResult {
   localAssetPath?: string;
   continuitySourceShotId?: string;
   visualReferenceName?: string;
+  generatedFirstFramePath?: string;
 }
 
 export interface VideoProvider {
@@ -36,7 +38,10 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
     `PROJECT CONTINUITY BIBLE: ${project.synopsis}`,
     `LOCKED VISUAL STYLE: ${project.visualStyle}. Keep the same character identity, face, hairstyle, age, body proportions, costume, props, architecture, weather, color palette, lighting direction, lens character and film grain across every shot. Do not redesign or replace established elements.`,
     scene && `CURRENT SCENE: ${scene.location}; mood: ${scene.mood}.`,
-    previousShot && `CONTINUE DIRECTLY FROM PREVIOUS SHOT: ${previousShot.description}. Preserve the ending positions, screen direction, action phase, environment state and lighting continuity.`,
+    transitionMode(shot, project) === "continue" && previousShot && `CONTINUE DIRECTLY FROM PREVIOUS SHOT: ${previousShot.description}. Preserve the ending positions, screen direction, action phase, environment state and lighting continuity.`,
+    transitionMode(shot, project) === "cut" && "CAMERA CUT: use the approved opening composition. Preserve character identity and screen direction; do not morph from the previous camera angle.",
+    transitionMode(shot, project) === "scene" && "NEW SCENE: establish the specified location and opening composition. Preserve character identity; do not carry over the previous background or action.",
+    ...(project.characters ?? []).filter((character) => shot.characterIds?.includes(character.id)).map((character) => `CHARACTER ${character.name}: ${character.description}`),
     `CURRENT SHOT: ${shot.description}`,
     `Cinematic ${shot.framing}, ${project.visualStyle}.`,
     motion,
@@ -45,9 +50,10 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
 }
 
 export function getContinuitySource(shot: Shot, project: MovieProject): Shot | undefined {
+  if (!usesPreviousFrame(shot, project)) return undefined;
   const previous = getPreviousTimelineShot(project, shot.id);
   if (!isUsableContinuitySource(previous)) return undefined;
-  return sharesSceneWithPrevious(project, shot.id) ? previous : undefined;
+  return previous;
 }
 
 export function supportedVideoDuration(shotDuration: number): 6 | 10 {
@@ -93,9 +99,15 @@ const minimaxProvider: VideoProvider = {
     let continuitySource: Shot | undefined;
     let firstFrameImage: string | undefined;
     if (!shot.taskId) {
+      const issue = firstFrameIssue(shot);
+      if (issue) throw new Error(issue);
       continuitySource = getContinuitySource(shot, project);
+      if (usesPreviousFrame(shot, project) && !continuitySource) throw new Error("动作延续需要上一镜头已完成且连续性有效，请先完成上一镜头或切换衔接方式。");
       const source = continuitySource?.localAssetPath ?? continuitySource?.videoUrl;
-      if (source) {
+      if (shot.firstFrame) {
+        if (!project.localPath) throw new Error("请先保存项目。");
+        firstFrameImage = await invoke<string>("read_project_image_data_url", { projectPath: project.localPath, path: shot.firstFrame.localPath });
+      } else if (source) {
         onProgress?.("正在提取上一镜头尾帧", 0);
         firstFrameImage = await invoke<string>("extract_video_last_frame", { source, seconds: continuityFrameTime(continuitySource!) });
       } else if (project.visualReference && project.localPath) {
@@ -104,11 +116,13 @@ const minimaxProvider: VideoProvider = {
       }
     }
 
+    const prompt = buildShotPrompt(shot, project);
+    if (!shot.taskId && prompt.length > 2000) throw new Error("镜头和角色设定合计超过当前模型的 2000 字符限制，请精简描述或减少出场角色。");
     const taskId = shot.taskId ?? await invoke<string>("minimax_create_video", {
         apiKey,
         request: {
           model: modelForGeneration(settings.model, Boolean(firstFrameImage)),
-          prompt: buildShotPrompt(shot, project),
+          prompt,
           duration: supportedVideoDuration(shot.duration),
           resolution: settings.resolution,
           firstFrameImage,
@@ -130,8 +144,9 @@ const minimaxProvider: VideoProvider = {
           taskId,
           videoUrl,
           localAssetPath,
+          generatedFirstFramePath: shot.firstFrame?.localPath ?? (shot.taskId ? shot.generatedFirstFramePath : undefined),
           continuitySourceShotId: continuitySource?.id ?? shot.continuitySourceShotId,
-          visualReferenceName: (!continuitySource && firstFrameImage ? project.visualReference?.name : undefined) ?? shot.visualReferenceName,
+          visualReferenceName: shot.firstFrame?.name ?? (shot.taskId ? shot.visualReferenceName : !continuitySource && firstFrameImage ? project.visualReference?.name : undefined),
         };
       }
       if (["Fail", "Failed"].includes(result.status)) throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
