@@ -40,7 +40,7 @@ import { loadApiKey, loadIdeaDraft, loadProjects, loadPromptVersions, loadSettin
 import type { GenerationSettings, MovieProject, Shot } from "@/domain/movie";
 import type { AppView as View } from "@/app/navigation";
 import { AppRail } from "@/app/AppRail";
-import { AssetsView, MoviesView } from "@/features/library";
+import { AssetsView, MoviesView, PromptVersionsView } from "@/features/library";
 import { ContinuityTools } from "./components/ContinuityTools";
 import { showContinuityWarnings } from "./lib/generationDisplay";
 import { ShotDirectionPanel } from "./components/ShotDirectionPanel";
@@ -93,6 +93,7 @@ export default function App() {
     setIsThinking(true);
     try {
       const project = await developIdea(idea.trim(), settings, apiKey);
+      addPromptVersion(idea, "project", project);
       setActive(project);
       setView("proposal");
     } catch (error) {
@@ -119,12 +120,19 @@ export default function App() {
     }
   };
 
-  const addPromptVersion = (content: string, source: PromptVersion["source"]) => {
+  const addPromptVersion = (content: string, source: PromptVersion["source"], project?: MovieProject) => {
     const normalized = content.trim();
     if (!normalized) return;
     setPromptVersions((current) => {
-      if (current[0]?.content === normalized && current[0]?.source === source) return current;
-      return [{ id: crypto.randomUUID(), content: normalized, createdAt: new Date().toISOString(), source }, ...current].slice(0, 50);
+      if (current[0]?.content === normalized && current[0]?.source === source && current[0]?.projectId === project?.id) return current;
+      return [{
+        id: crypto.randomUUID(),
+        content: normalized,
+        createdAt: new Date().toISOString(),
+        source,
+        projectId: project?.id,
+        projectTitle: project?.title,
+      }, ...current].slice(0, 50);
     });
   };
 
@@ -199,7 +207,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <AppRail view={view} onHome={goHome} onMovies={() => setView("movies")} onAssets={() => setView("assets")} onStyles={() => setView("styles")} onSettings={() => setView("settings")} />
+      <AppRail view={view} onHome={goHome} onMovies={() => setView("movies")} onAssets={() => setView("assets")} onPrompts={() => setView("prompts")} onStyles={() => setView("styles")} onSettings={() => setView("settings")} />
       <main className="main-stage">
         {view === "home" && (
           <HomeView
@@ -227,6 +235,13 @@ export default function App() {
         )}
         {view === "movies" && <MoviesView projects={projects} onOpen={openProject} onOpenFile={openLocalProject} />}
         {view === "assets" && <AssetsView projects={projects} onOpen={openProject} />}
+        {view === "prompts" && <PromptVersionsView
+          versions={promptVersions}
+          projects={projects}
+          onOpenProject={openProject}
+          onRestore={(version) => { setIdea(version.content); setPromptAnalysis(null); setView("home"); }}
+          onDelete={(id) => setPromptVersions((current) => current.filter((item) => item.id !== id))}
+        />}
         {view === "styles" && <DirectorStylesView styles={directorStyles} onChange={setDirectorStyles} />}
         {view === "studio" && active && (
           <StudioView

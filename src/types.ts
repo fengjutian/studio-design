@@ -94,7 +94,9 @@ export interface PromptVersion {
   id: string;
   content: string;
   createdAt: string;
-  source: "manual" | "before-expand" | "expanded";
+  source: "manual" | "before-expand" | "expanded" | "project";
+  projectId?: string;
+  projectTitle?: string;
 }
 
 export interface PromptAnalysis {
