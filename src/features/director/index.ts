@@ -1,1 +1,1 @@
-export { analyzeVideoPrompt, cleanExpandedIdea, developIdea, expandIdea, parseDirectorJson, parsePromptAnalysis } from "@/lib/aiDirector";
+export { analyzeVideoPrompt, cleanExpandedIdea, developIdea, expandIdea, optimizeVideoPrompt, parseDirectorJson, parsePromptAnalysis } from "@/lib/aiDirector";

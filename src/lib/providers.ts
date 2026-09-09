@@ -29,6 +29,7 @@ export interface VideoProvider {
 }
 
 export function buildShotPrompt(shot: Shot, project: MovieProject) {
+  if (shot.generationPromptOverride?.trim()) return shot.generationPromptOverride.trim();
   const motion = cameraCommand(shot.movement);
   const orderedShots = getOrderedShots(project);
   const shotIndex = orderedShots.findIndex((item) => item.id === shot.id);

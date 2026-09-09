@@ -53,7 +53,7 @@ export function loadPromptVersions(): PromptVersion[] {
     const value = JSON.parse(localStorage.getItem(PROMPT_VERSIONS_KEY) ?? "[]");
     return Array.isArray(value) ? value.filter((item): item is PromptVersion =>
       !!item && typeof item.id === "string" && typeof item.content === "string" &&
-      typeof item.createdAt === "string" && ["manual", "before-expand", "expanded", "project"].includes(item.source)
+      typeof item.createdAt === "string" && ["manual", "before-expand", "expanded", "optimized", "project"].includes(item.source)
     ) : [];
   } catch {
     return [];

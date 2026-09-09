@@ -227,6 +227,41 @@ async fn minimax_analyze_video_prompt(
 }
 
 #[tauri::command]
+async fn minimax_optimize_video_prompt(
+    api_key: String,
+    idea: String,
+    analysis: String,
+    model: String,
+) -> Result<String, String> {
+    validate_key(&api_key)?;
+    if idea.trim().is_empty() || idea.chars().count() > 4000 {
+        return Err("The prompt must contain between 1 and 4000 characters.".into());
+    }
+    if !matches!(model.as_str(), "MiniMax-M3" | "MiniMax-M2.7" | "MiniMax-M2.7-highspeed") {
+        return Err("Unsupported AI director model.".into());
+    }
+    let system = r#"You are a senior text-to-video prompt editor. Rewrite the user's original Chinese prompt using the supplied review. Preserve the story, characters, intent and distinctive visual ideas. Fix ambiguity, excessive simultaneous action, temporal incoherence and conflicting camera instructions. Make subjects, action order, camera, lighting and style directly filmable. Return only one polished Chinese prompt, without title, explanation, Markdown or JSON. Keep it concise and under 1000 Chinese characters."#;
+    let response = client()
+        .post(format!("{MINIMAX_API_BASE}/chat/completions"))
+        .bearer_auth(api_key.trim())
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "name": "Director Studio", "content": system},
+                {"role": "user", "name": "Director", "content": format!("原提示词：\n{idea}\n\n分析结果：\n{analysis}")}
+            ],
+            "temperature": 0.55,
+            "max_completion_tokens": 1600
+        }))
+        .send().await.map_err(network_error)?;
+    let status = response.status();
+    let body: ChatCompletionResponse = response.json().await.map_err(parse_error)?;
+    ensure_success(status, &body.base_resp)?;
+    body.choices.into_iter().next().map(|choice| choice.message.content)
+        .ok_or_else(|| "AI prompt optimization returned no content.".into())
+}
+
+#[tauri::command]
 async fn minimax_test_connection(api_key: String) -> Result<String, String> {
     validate_key(&api_key)?;
     let response = client()
@@ -827,6 +862,7 @@ pub fn run() {
             minimax_director_proposal,
             minimax_expand_idea,
             minimax_analyze_video_prompt,
+            minimax_optimize_video_prompt,
             minimax_test_connection,
             minimax_create_video,
             extract_video_last_frame,

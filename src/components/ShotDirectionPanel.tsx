@@ -4,6 +4,7 @@ import type { CharacterAsset, MovieProject, Shot, VisualReference } from "../typ
 import { actionStart, framingWarning, transitionMode } from "../lib/shotDirection";
 import { archiveShot } from "../lib/continuityFrames";
 import { invalidateAllContinuity, invalidateDownstreamContinuity } from "../lib/timeline";
+import { buildShotPrompt } from "../lib/providers";
 
 export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }: { project: MovieProject; shot: Shot; disabled: boolean; onUpdate: (project: MovieProject) => void; onSave: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -41,6 +42,7 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     <button disabled={locked} onClick={() => void importImage()}>{shot.firstFrame ? "替换镜头首帧" : "导入镜头首帧"}</button>
     {shot.firstFrame && <><img className="direction-preview" src={convertFileSrc(shot.firstFrame.localPath)} alt={`分镜首帧：${shot.firstFrame.name}`} /><label><input type="checkbox" checked={!!shot.firstFrameApproved} disabled={locked} onChange={(event) => updateShot({ firstFrameApproved: event.target.checked })} />已核对角色、站位和构图</label><button disabled={locked} onClick={() => updateShot({ firstFrame: undefined, firstFrameApproved: false })}>移除首帧引用</button></>}
     <p>当前已接入的视频适配器只传一张首帧。角色图片用于预审，选中角色的文字设定会加入提示词。</p>
+    <ShotPromptEditor key={`${shot.id}-${shot.generationPromptOverride ?? "auto"}`} shot={shot} project={project} disabled={locked} onSave={(generationPromptOverride) => updateShot({ generationPromptOverride })} />
     <button disabled={locked} onClick={() => updateCharacters([...(project.characters ?? []), { id: crypto.randomUUID(), name: "新角色", description: "", images: [] }])}>添加角色</button>
     {(project.characters ?? []).map((character) => <details key={character.id}><summary>{character.name || "未命名角色"} · {character.images.length} 张图</summary>
       <label><input type="checkbox" disabled={locked} checked={shot.characterIds?.includes(character.id) ?? false} onChange={(event) => updateShot({ characterIds: event.target.checked ? [...(shot.characterIds ?? []), character.id] : shot.characterIds?.filter((id) => id !== character.id) })} />本镜头出场</label>
@@ -51,6 +53,20 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     </details>)}
     {error && <p role="alert">{error}</p>}
   </section>;
+}
+
+function ShotPromptEditor({ shot, project, disabled, onSave }: { shot: Shot; project: MovieProject; disabled: boolean; onSave: (value?: string) => void }) {
+  const automatic = buildShotPrompt({ ...shot, generationPromptOverride: undefined }, project);
+  const [value, setValue] = useState(shot.generationPromptOverride ?? automatic);
+  const customized = !!shot.generationPromptOverride;
+  return <details className="shot-prompt-editor">
+    <summary>最终生成提示词 {customized ? "· 已自定义" : "· 自动合成"}</summary>
+    <p>这里的内容会原样发送给视频模型，并记录到生成快照。</p>
+    <textarea disabled={disabled} value={value} maxLength={2000} rows={9} onChange={(event) => setValue(event.target.value)} />
+    <small>{value.length}/2000 字符</small>
+    <button disabled={disabled || !value.trim()} onClick={() => onSave(value.trim())}>锁定此镜头提示词</button>
+    {customized && <button disabled={disabled} onClick={() => onSave(undefined)}>恢复自动合成</button>}
+  </details>;
 }
 
 function CharacterEditor({ character, disabled, onSave }: { character: CharacterAsset; disabled: boolean; onSave: (name: string, description: string) => void }) {

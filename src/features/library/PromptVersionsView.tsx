@@ -5,7 +5,7 @@ import type { MovieProject, PromptVersion } from "@/types";
 import { isDesktopApp } from "@/features/projects";
 
 const sourceLabels: Record<PromptVersion["source"], string> = {
-  manual: "手动保存", "before-expand": "扩写前", expanded: "AI 扩写", project: "创建电影",
+  manual: "手动保存", "before-expand": "扩写前", expanded: "AI 扩写", optimized: "AI 优化", project: "创建电影",
 };
 type Filter = "all" | "linked" | "unlinked" | "analyzed";
 

@@ -32,6 +32,7 @@ export interface Shot {
   generatedFirstFramePath?: string;
   sourceFrame?: { shotId: string; taskId?: string; path?: string; seconds: number };
   generationSnapshot?: GenerationSnapshot;
+  generationPromptOverride?: string;
 }
 
 export type ShotVersion = Omit<Shot, "versions"> & { savedAt: string };
@@ -108,7 +109,7 @@ export interface PromptVersion {
   id: string;
   content: string;
   createdAt: string;
-  source: "manual" | "before-expand" | "expanded" | "project";
+  source: "manual" | "before-expand" | "expanded" | "optimized" | "project";
   projectId?: string;
   projectTitle?: string;
   name?: string;

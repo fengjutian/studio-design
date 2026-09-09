@@ -29,6 +29,15 @@ export async function analyzeVideoPrompt(idea: string, settings: GenerationSetti
   return parsePromptAnalysis(content);
 }
 
+export async function optimizeVideoPrompt(idea: string, analysis: PromptAnalysis, settings: GenerationSettings, apiKey: string): Promise<string> {
+  if (settings.directorProvider !== "minimax" || !apiKey.trim()) throw new Error("请先在设置中启用 MiniMax AI 导演并填写 API Key。");
+  if (!isDesktopApp()) throw new Error("AI 提示词优化只能在 Tauri 桌面应用中运行。");
+  const content = await invoke<string>("minimax_optimize_video_prompt", {
+    apiKey, idea: idea.trim(), analysis: JSON.stringify(analysis), model: settings.directorModel,
+  });
+  return cleanExpandedIdea(content);
+}
+
 export function parsePromptAnalysis(content: string): PromptAnalysis {
   const withoutThinking = content.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   const fenced = withoutThinking.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
