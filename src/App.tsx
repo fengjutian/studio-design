@@ -32,7 +32,7 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { analyzeVideoPrompt, developIdea, expandIdea } from "@/features/director";
-import { getActiveProviderName, getModelDefinition, getProviderDefinition, getVideoProvider, providerDefinitions, selectProvider, supportedVideoDuration } from "@/features/generation";
+import { buildShotPrompt, getActiveProviderName, getModelDefinition, getProviderDefinition, getVideoProvider, providerDefinitions, selectProvider, supportedVideoDuration } from "@/features/generation";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "@/features/projects";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
 import { getPreviousTimelineShot, getTimelineShots, invalidateAllContinuity, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, sharesSceneWithPrevious, shotPlaybackDuration } from "@/features/timeline";
@@ -510,6 +510,17 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     const taskProviderName = getActiveProviderName(taskSettings);
     const archived = { ...project, scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...archiveShot(shot), sourceFrame: forceNew && sameSceneTransition && previousShot ? { shotId: previousShot.id, taskId: previousShot.taskId, path: previousShot.localAssetPath, seconds: continuityFrameTime(previousShot) } : forceNew ? undefined : shot.sourceFrame } : shot) })) };
     const generationProject = forceNew ? invalidateDownstreamContinuity(archived, selected.id) : archived;
+    const generationSnapshot = !forceNew && selected.taskId && selected.generationSnapshot
+      ? selected.generationSnapshot
+      : {
+          id: crypto.randomUUID(),
+          prompt: buildShotPrompt(generationShot, generationProject),
+          providerId: taskSettings.provider,
+          modelId: taskSettings.model,
+          resolution: taskSettings.resolution,
+          duration: supportedVideoDuration(selected.duration),
+          createdAt: new Date().toISOString(),
+        };
     let currentTaskId = generationShot.taskId;
     setActiveGenerationId(selected.id);
     setGenerationProgress(currentTaskId ? "正在恢复任务状态查询…" : "正在提交生成任务…");
@@ -519,7 +530,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
       updatedAt: new Date().toISOString(),
       scenes: generationProject.scenes.map((scene) => ({
         ...scene,
-        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: forceNew ? undefined : shot.taskId, generationProviderId: taskSettings.provider, generationModelId: taskSettings.model, generationStatus: "generating", generationStartedAt: new Date().toISOString(), generationError: undefined } : shot),
+        shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: forceNew ? undefined : shot.taskId, generationSnapshot, generationProviderId: taskSettings.provider, generationModelId: taskSettings.model, generationStatus: "generating", generationStartedAt: new Date().toISOString(), generationError: undefined } : shot),
       })),
     });
     try {
@@ -531,7 +542,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         onTaskCreated: (taskId) => {
           currentTaskId = taskId;
           setGenerationProgress(`任务已提交（${taskId}），等待 ${taskProviderName} 处理…`);
-          onUpdate({ ...generationProject, status: "生成中", updatedAt: new Date().toISOString(), scenes: generationProject.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId, generationProviderId: taskSettings.provider, generationModelId: taskSettings.model, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString() } : shot) })) });
+          onUpdate({ ...generationProject, status: "生成中", updatedAt: new Date().toISOString(), scenes: generationProject.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId, generationSnapshot: { ...generationSnapshot, taskId }, generationProviderId: taskSettings.provider, generationModelId: taskSettings.model, generationStatus: "generating", generationStartedAt: shot.generationStartedAt ?? new Date().toISOString() } : shot) })) });
         },
         onProgress: (status, elapsedSeconds) => setGenerationProgress(`${taskProviderName} 状态：${status} · 已等待 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒`),
       });
@@ -552,6 +563,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             continuitySourceShotId: result.continuitySourceShotId,
             visualReferenceName: result.visualReferenceName,
             generatedFirstFramePath: result.generatedFirstFramePath,
+            generationSnapshot: { ...generationSnapshot, taskId: result.taskId, videoUrl: result.videoUrl, localAssetPath: result.localAssetPath },
             continuityStale: false,
             trimStart: 0,
             trimEnd: selected.duration,
@@ -569,7 +581,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
         updatedAt: new Date().toISOString(),
         scenes: generationProject.scenes.map((scene) => ({
           ...scene,
-          shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: canResume ? currentTaskId : undefined, generationStatus: "failed", generationError: message } : shot),
+          shots: scene.shots.map((shot) => shot.id === selected.id ? { ...shot, taskId: canResume ? currentTaskId : undefined, generationSnapshot: { ...generationSnapshot, taskId: currentTaskId }, generationStatus: "failed", generationError: message } : shot),
         })),
       });
     } finally {
@@ -747,6 +759,13 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="director-conversation">
             <section className="shot-direction"><h3>电影导演风格</h3><select aria-label="选择导演风格" disabled={!!activeGenerationId} value="" onChange={(event) => { const style = directorStyles.find((item) => item.id === event.target.value); onUpdate({ ...invalidateAllContinuity(project), directorStyle: style ? { ...style } : undefined, updatedAt: new Date().toISOString() }); }}><option value="" disabled>选择或更新风格…</option><option value="none">不使用导演风格</option>{directorStyles.map((style) => <option value={style.id} key={style.id}>{style.name}</option>)}</select><p>当前：{project.directorStyle?.name ?? "未启用"}</p>{project.directorStyle && <details><summary>查看生成指令</summary><p>{project.directorStyle.prompt}</p></details>}<p>应用于整部电影的新生成任务；更换后已有镜头会标记为需重生成。</p></section>
             {selected && <ShotDirectionPanel key={`${project.id}-${selected.id}`} project={project} shot={selected} disabled={!!activeGenerationId} onUpdate={onUpdate} onSave={onSaveAs} />}
+            {selected?.generationSnapshot && <section className="generation-snapshot">
+              <div className="snapshot-heading"><div><span>GENERATION SNAPSHOT</span><h3>本视频生成记录</h3></div><i>已锁定</i></div>
+              <div className="snapshot-specs"><span>{selected.generationSnapshot.modelId}</span><span>{selected.generationSnapshot.resolution}</span><span>{selected.generationSnapshot.duration} 秒</span></div>
+              <time>{new Date(selected.generationSnapshot.createdAt).toLocaleString("zh-CN")} · {selected.generationSnapshot.providerId}</time>
+              <details><summary>查看实际发送的提示词</summary><p>{selected.generationSnapshot.prompt}</p><button type="button" onClick={() => void navigator.clipboard.writeText(selected.generationSnapshot!.prompt)}>复制提示词</button></details>
+              {selected.generationSnapshot.taskId && <small>任务 ID · {selected.generationSnapshot.taskId}</small>}
+            </section>}
             {selected && <ContinuityTools shot={selected} disabled={!!activeGenerationId} onCut={(seconds) => updateTrim("trimEnd", seconds)} onRestore={restoreVersion} />}
             <div className="ai-message"><span>AI 导演助手</span><p>这是<strong>{selected?.title}</strong>。{selected?.description}</p><p>我会使用{selected?.framing}和{selected?.movement}，让画面延续“{project.visualStyle}”的感觉。</p></div>
             {directorMode && <div className="pro-controls"><span>镜头规格</span><label>摄影机<input value={selected?.framing ?? ""} readOnly /></label><label>运镜<input value={selected?.movement ?? ""} readOnly /></label><label>视觉风格<textarea value={project.visualStyle} readOnly /></label><label>生成引擎<input value={`${providerName} · ${settings.model}`} readOnly /></label></div>}

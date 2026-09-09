@@ -31,9 +31,23 @@ export interface Shot {
   characterIds?: string[];
   generatedFirstFramePath?: string;
   sourceFrame?: { shotId: string; taskId?: string; path?: string; seconds: number };
+  generationSnapshot?: GenerationSnapshot;
 }
 
 export type ShotVersion = Omit<Shot, "versions"> & { savedAt: string };
+
+export interface GenerationSnapshot {
+  id: string;
+  prompt: string;
+  providerId: string;
+  modelId: string;
+  resolution: string;
+  duration: number;
+  createdAt: string;
+  taskId?: string;
+  videoUrl?: string;
+  localAssetPath?: string;
+}
 
 export interface AudioTrack {
   id: string;

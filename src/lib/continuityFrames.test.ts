@@ -20,4 +20,16 @@ describe("continuity frames and versions", () => {
     expect(saved.versions?.[0]).not.toHaveProperty("versions");
     expect(shot.versions).toBeUndefined();
   });
+  it("keeps the exact generation prompt with an archived video", () => {
+    const shot = createDirectorProposal("雨夜").scenes[0].shots[0];
+    shot.localAssetPath = "take-1.mp4";
+    shot.generationSnapshot = {
+      id: "snapshot-1", prompt: "exact provider prompt", providerId: "minimax",
+      modelId: "MiniMax-Hailuo-2.3", resolution: "768P", duration: 6,
+      createdAt: "2026-09-09T00:00:00.000Z", taskId: "task-1",
+    };
+    const saved = archiveShot(shot);
+    expect(saved.versions?.[0].generationSnapshot?.prompt).toBe("exact provider prompt");
+    expect(saved.versions?.[0].generationSnapshot?.taskId).toBe("task-1");
+  });
 });
