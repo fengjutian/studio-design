@@ -167,12 +167,36 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .asset-card h2 { margin: 6px 0; font-size: 13px; }
 .asset-card p { margin: 0; color: #65635f; font-size: 10px; }
 .prompt-library-list { display: grid; gap: 12px; }
+.prompt-toolbar { display: flex; align-items: center; gap: 12px; margin: -8px 0 18px; }
+.prompt-toolbar > input { width: min(360px, 42%); height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; color: var(--paper); background: #141416; }
+.prompt-toolbar > div { display: flex; gap: 5px; }
+.prompt-toolbar button { padding: 6px 10px; border: 1px solid var(--line); border-radius: 16px; color: #77746f; background: transparent; cursor: pointer; font-size: 9px; }
+.prompt-toolbar button.active { color: var(--accent); border-color: rgba(214,255,63,.22); background: rgba(214,255,63,.06); }
+.prompt-toolbar > span { margin-left: auto; color: #5f5d59; font-size: 9px; }
+.prompt-compare { margin-bottom: 16px; padding: 15px; border: 1px solid rgba(214,255,63,.2); border-radius: 12px; background: rgba(214,255,63,.025); }
+.compare-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 11px; color: var(--accent); font-size: 11px; }
+.compare-heading button { border: 0; color: #77746f; background: transparent; cursor: pointer; font-size: 9px; }
+.prompt-compare > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.prompt-compare article { padding: 12px; border-radius: 9px; background: #141416; }
+.prompt-compare article span { color: #aaa7a1; font-size: 10px; }
+.prompt-compare article small { float: right; color: #5f5d59; font-size: 8px; }
+.prompt-compare article p { margin: 9px 0 0; color: #aaa7a1; font-size: 11px; line-height: 1.75; white-space: pre-wrap; }
 .prompt-library-card { display: grid; grid-template-columns: minmax(0, 1fr) 290px auto; gap: 15px 20px; align-items: center; padding: 17px 18px; border: 1px solid var(--line); border-radius: 13px; background: #141416; }
 .prompt-library-card:hover { border-color: rgba(214,255,63,.22); }
+.prompt-library-card.selected { border-color: rgba(214,255,63,.42); }
 .prompt-library-meta { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; }
 .prompt-library-meta span { padding: 3px 7px; border-radius: 10px; color: var(--accent); background: rgba(214,255,63,.07); font-size: 9px; }
 .prompt-library-meta b { color: #96938d; font-size: 10px; font-weight: 500; }
 .prompt-library-meta time { margin-left: auto; color: #5f5d59; font-size: 9px; }
+.compare-check { display: inline-flex; align-items: center; gap: 4px; color: #696762; font-size: 9px; }
+.compare-check input { accent-color: var(--accent); }
+.prompt-analysis-badge { padding: 3px 7px; border-radius: 10px; color: #dcc173; background: rgba(220,193,115,.07); font-style: normal; font-size: 9px; }
+.prompt-analysis-badge.verdict-适合 { color: var(--accent); background: rgba(214,255,63,.07); }
+.prompt-analysis-badge.verdict-不适合 { color: #df8a7b; background: rgba(223,138,123,.07); }
+.prompt-copy { min-width: 0; }
+.prompt-copy > input { width: 100%; padding: 4px 0; border: 0; border-bottom: 1px solid transparent; color: #8d8a84; background: transparent; font-size: 9px; }
+.prompt-copy > input:first-child { color: var(--paper); font-size: 12px; font-weight: 600; }
+.prompt-copy > input:focus { border-bottom-color: rgba(214,255,63,.25); outline: 0; }
 .prompt-library-content { margin: 0; color: #c1beb7; font-size: 12px; line-height: 1.75; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .prompt-project-link { min-width: 0; display: flex; align-items: center; gap: 7px; }
 .prompt-project-link > button:first-child { min-width: 120px; flex: 1; display: flex; align-items: center; gap: 9px; padding: 9px 10px; text-align: left; border: 1px solid rgba(214,255,63,.13); border-radius: 9px; color: var(--accent); background: rgba(214,255,63,.035); cursor: pointer; }
@@ -186,10 +210,18 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .prompt-library-actions { display: flex; gap: 6px; }
 .prompt-library-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; color: #8b8985; background: transparent; cursor: pointer; font-size: 9px; }
 .prompt-library-actions button:hover { color: var(--paper); background: rgba(255,255,255,.05); }
+.saved-analysis { grid-column: 1 / -1; padding: 9px 11px; border-radius: 8px; color: #77746f; background: rgba(255,255,255,.02); font-size: 9px; }
+.saved-analysis summary { cursor: pointer; color: #aaa7a1; }
+.saved-analysis p { margin: 8px 0 4px; color: #99968f; font-size: 10px; }
+.saved-analysis small { color: #6e6b66; }
+.compact-empty { min-height: 230px; }
 
 @media (max-width: 1000px) {
   .prompt-library-card { grid-template-columns: 1fr; }
   .prompt-library-meta { grid-column: 1; }
+  .prompt-toolbar { align-items: stretch; flex-direction: column; }
+  .prompt-toolbar > input { width: 100%; }
+  .prompt-toolbar > span { margin-left: 0; }
 }
 
 .proposal-view { background: #101011; display: flex; flex-direction: column; }

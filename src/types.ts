@@ -97,6 +97,9 @@ export interface PromptVersion {
   source: "manual" | "before-expand" | "expanded" | "project";
   projectId?: string;
   projectTitle?: string;
+  name?: string;
+  note?: string;
+  analysis?: PromptAnalysis;
 }
 
 export interface PromptAnalysis {

@@ -142,7 +142,17 @@ export default function App() {
     if (!idea.trim() || isAnalyzing) return;
     setIsAnalyzing(true);
     try {
-      setPromptAnalysis(await analyzeVideoPrompt(idea, settings, apiKey));
+      const analysis = await analyzeVideoPrompt(idea, settings, apiKey);
+      setPromptAnalysis(analysis);
+      const normalized = idea.trim();
+      setPromptVersions((current) => {
+        const existing = current.findIndex((version) => version.content === normalized);
+        if (existing < 0) {
+          const analyzedVersion: PromptVersion = { id: crypto.randomUUID(), content: normalized, createdAt: new Date().toISOString(), source: "manual", analysis };
+          return [analyzedVersion, ...current].slice(0, 50);
+        }
+        return current.map((version, index) => index === existing ? { ...version, analysis } : version);
+      });
     } catch (error) {
       showNotice(error instanceof Error ? error.message : String(error));
     } finally {
@@ -241,6 +251,7 @@ export default function App() {
           onOpenProject={openProject}
           onRestore={(version) => { setIdea(version.content); setPromptAnalysis(null); setView("home"); }}
           onDelete={(id) => setPromptVersions((current) => current.filter((item) => item.id !== id))}
+          onUpdate={(id, patch) => setPromptVersions((current) => current.map((version) => version.id === id ? { ...version, ...patch } : version))}
         />}
         {view === "styles" && <DirectorStylesView styles={directorStyles} onChange={setDirectorStyles} />}
         {view === "studio" && active && (
