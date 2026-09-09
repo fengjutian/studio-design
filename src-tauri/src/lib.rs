@@ -193,6 +193,40 @@ async fn minimax_expand_idea(
 }
 
 #[tauri::command]
+async fn minimax_analyze_video_prompt(
+    api_key: String,
+    idea: String,
+    model: String,
+) -> Result<String, String> {
+    validate_key(&api_key)?;
+    if idea.trim().is_empty() || idea.chars().count() > 4000 {
+        return Err("The prompt must contain between 1 and 4000 characters.".into());
+    }
+    if !matches!(model.as_str(), "MiniMax-M3" | "MiniMax-M2.7" | "MiniMax-M2.7-highspeed") {
+        return Err("Unsupported AI director model.".into());
+    }
+    let system = r#"You are a senior text-to-video prompt reviewer. Analyze whether the user's Chinese prompt is suitable for AI video generation. Consider visual specificity, subject and action clarity, temporal coherence, camera language, lighting/style, feasible duration, continuity, ambiguity, and safety. Do not rewrite the prompt. Return strict JSON only with this schema: {"score":0-100,"verdict":"适合|需要优化|不适合","summary":"one concise Chinese sentence","strengths":["..."],"risks":["..."],"suggestions":["..."]}. Give 1-3 concrete items in each array, use empty arrays when none."#;
+    let response = client()
+        .post(format!("{MINIMAX_API_BASE}/chat/completions"))
+        .bearer_auth(api_key.trim())
+        .json(&serde_json::json!({
+            "model": model,
+            "messages": [
+                {"role": "system", "name": "Director Studio", "content": system},
+                {"role": "user", "name": "Director", "content": idea}
+            ],
+            "temperature": 0.2,
+            "max_completion_tokens": 1000
+        }))
+        .send().await.map_err(network_error)?;
+    let status = response.status();
+    let body: ChatCompletionResponse = response.json().await.map_err(parse_error)?;
+    ensure_success(status, &body.base_resp)?;
+    body.choices.into_iter().next().map(|choice| choice.message.content)
+        .ok_or_else(|| "AI prompt analysis returned no content.".into())
+}
+
+#[tauri::command]
 async fn minimax_test_connection(api_key: String) -> Result<String, String> {
     validate_key(&api_key)?;
     let response = client()
@@ -792,6 +826,7 @@ pub fn run() {
             export_movie,
             minimax_director_proposal,
             minimax_expand_idea,
+            minimax_analyze_video_prompt,
             minimax_test_connection,
             minimax_create_video,
             extract_video_last_frame,

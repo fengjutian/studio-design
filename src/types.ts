@@ -90,6 +90,22 @@ export interface DirectorStyle {
   prompt: string;
 }
 
+export interface PromptVersion {
+  id: string;
+  content: string;
+  createdAt: string;
+  source: "manual" | "before-expand" | "expanded";
+}
+
+export interface PromptAnalysis {
+  score: number;
+  verdict: "适合" | "需要优化" | "不适合";
+  summary: string;
+  strengths: string[];
+  risks: string[];
+  suggestions: string[];
+}
+
 export type ProviderKind = string;
 export type MiniMaxModel = string;
 

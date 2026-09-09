@@ -1,10 +1,11 @@
-import type { GenerationSettings, MovieProject } from "../types";
+import type { GenerationSettings, MovieProject, PromptVersion } from "../types";
 import { normalizeGenerationSettings } from "./providerRegistry";
 
 const KEY = "director-studio-projects-v1";
 const SETTINGS_KEY = "director-studio-settings-v1";
 const IDEA_DRAFT_KEY = "director-studio-idea-draft-v1";
 const MINIMAX_API_KEY = "director-studio-minimax-api-key-v1";
+const PROMPT_VERSIONS_KEY = "director-studio-prompt-versions-v1";
 
 export const defaultSettings: GenerationSettings = {
   provider: "mock",
@@ -45,6 +46,22 @@ export function loadIdeaDraft(): string {
 
 export function saveIdeaDraft(idea: string) {
   localStorage.setItem(IDEA_DRAFT_KEY, idea);
+}
+
+export function loadPromptVersions(): PromptVersion[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(PROMPT_VERSIONS_KEY) ?? "[]");
+    return Array.isArray(value) ? value.filter((item): item is PromptVersion =>
+      !!item && typeof item.id === "string" && typeof item.content === "string" &&
+      typeof item.createdAt === "string" && ["manual", "before-expand", "expanded"].includes(item.source)
+    ) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePromptVersions(versions: PromptVersion[]) {
+  localStorage.setItem(PROMPT_VERSIONS_KEY, JSON.stringify(versions.slice(0, 50)));
 }
 
 export function loadApiKey(): string {

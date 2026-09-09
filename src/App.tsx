@@ -13,6 +13,7 @@ import {
   Film,
   FolderOpen,
   HardDrive,
+  History,
   KeyRound,
   MessageCircleMore,
   MoreHorizontal,
@@ -23,18 +24,19 @@ import {
   RotateCcw,
   Scissors,
   ShieldCheck,
+  Save,
   Sparkles,
   Download,
   WandSparkles,
   Volume2,
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { developIdea, expandIdea } from "@/features/director";
+import { analyzeVideoPrompt, developIdea, expandIdea } from "@/features/director";
 import { getActiveProviderName, getModelDefinition, getProviderDefinition, getVideoProvider, providerDefinitions, selectProvider, supportedVideoDuration } from "@/features/generation";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "@/features/projects";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
 import { getPreviousTimelineShot, getTimelineShots, invalidateAllContinuity, invalidateDownstreamContinuity, isUsableContinuitySource, moveTimelineShot, sharesSceneWithPrevious, shotPlaybackDuration } from "@/features/timeline";
-import { loadApiKey, loadIdeaDraft, loadProjects, loadSettings, saveApiKey, saveIdeaDraft, saveProjects, saveSettings } from "@/features/projects";
+import { loadApiKey, loadIdeaDraft, loadProjects, loadPromptVersions, loadSettings, saveApiKey, saveIdeaDraft, saveProjects, savePromptVersions, saveSettings } from "@/features/projects";
 import type { GenerationSettings, MovieProject, Shot } from "@/domain/movie";
 import type { AppView as View } from "@/app/navigation";
 import { AppRail } from "@/app/AppRail";
@@ -46,7 +48,7 @@ import { firstFrameIssue, usesPreviousFrame } from "./lib/shotDirection";
 import { archiveShot, continuityFrameTime } from "./lib/continuityFrames";
 import { DirectorStylesView } from "./components/DirectorStylesView";
 import { loadDirectorStyles, saveDirectorStyles } from "./lib/directorStyles";
-import type { DirectorStyle } from "./types";
+import type { DirectorStyle, PromptAnalysis, PromptVersion } from "./types";
 
 const prompts = [
   "一封迟到了十年的信，在海边小镇找到收件人",
@@ -67,6 +69,9 @@ export default function App() {
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [isThinking, setIsThinking] = useState(false);
   const [isExpanding, setIsExpanding] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [promptVersions, setPromptVersions] = useState<PromptVersion[]>(loadPromptVersions);
+  const [promptAnalysis, setPromptAnalysis] = useState<PromptAnalysis | null>(null);
   const [settings, setSettings] = useState<GenerationSettings>(loadSettings);
   const [apiKey, setApiKey] = useState(loadApiKey);
   const [notice, setNotice] = useState<string | null>(null);
@@ -76,6 +81,7 @@ export default function App() {
   useEffect(() => saveProjects(projects), [projects]);
   useEffect(() => saveSettings(settings), [settings]);
   useEffect(() => saveIdeaDraft(idea), [idea]);
+  useEffect(() => savePromptVersions(promptVersions), [promptVersions]);
   useEffect(() => saveApiKey(apiKey), [apiKey]);
   useEffect(() => {
     if (!active?.localPath || !isDesktopApp()) return;
@@ -100,12 +106,39 @@ export default function App() {
     if (!idea.trim() || isExpanding) return;
     setIsExpanding(true);
     try {
-      setIdea(await expandIdea(idea, settings, apiKey));
+      savePromptVersion("before-expand");
+      const expanded = await expandIdea(idea, settings, apiKey);
+      setIdea(expanded);
+      addPromptVersion(expanded, "expanded");
+      setPromptAnalysis(null);
       showNotice("AI 已完成扩写，你可以继续修改或直接开始创作。", 2600);
     } catch (error) {
       showNotice(error instanceof Error ? error.message : String(error));
     } finally {
       setIsExpanding(false);
+    }
+  };
+
+  const addPromptVersion = (content: string, source: PromptVersion["source"]) => {
+    const normalized = content.trim();
+    if (!normalized) return;
+    setPromptVersions((current) => {
+      if (current[0]?.content === normalized && current[0]?.source === source) return current;
+      return [{ id: crypto.randomUUID(), content: normalized, createdAt: new Date().toISOString(), source }, ...current].slice(0, 50);
+    });
+  };
+
+  const savePromptVersion = (source: PromptVersion["source"] = "manual") => addPromptVersion(idea, source);
+
+  const analyzePrompt = async () => {
+    if (!idea.trim() || isAnalyzing) return;
+    setIsAnalyzing(true);
+    try {
+      setPromptAnalysis(await analyzeVideoPrompt(idea, settings, apiKey));
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -174,9 +207,16 @@ export default function App() {
             projects={projects}
             isThinking={isThinking}
             isExpanding={isExpanding}
-            onIdea={setIdea}
+            isAnalyzing={isAnalyzing}
+            promptVersions={promptVersions}
+            promptAnalysis={promptAnalysis}
+            onIdea={(value) => { setIdea(value); setPromptAnalysis(null); }}
             onBegin={begin}
             onExpand={expandPrompt}
+            onAnalyze={analyzePrompt}
+            onSaveVersion={() => savePromptVersion()}
+            onRestoreVersion={(version) => { setIdea(version.content); setPromptAnalysis(null); }}
+            onDeleteVersion={(id) => setPromptVersions((current) => current.filter((item) => item.id !== id))}
             onPrompt={setIdea}
             onOpen={openProject}
             onOpenFile={openLocalProject}
@@ -215,15 +255,22 @@ interface HomeProps {
   projects: MovieProject[];
   isThinking: boolean;
   isExpanding: boolean;
+  isAnalyzing: boolean;
+  promptVersions: PromptVersion[];
+  promptAnalysis: PromptAnalysis | null;
   onIdea: (value: string) => void;
   onBegin: () => void;
   onExpand: () => void;
+  onAnalyze: () => void;
+  onSaveVersion: () => void;
+  onRestoreVersion: (version: PromptVersion) => void;
+  onDeleteVersion: (id: string) => void;
   onPrompt: (value: string) => void;
   onOpen: (project: MovieProject) => void;
   onOpenFile: () => void;
 }
 
-function HomeView({ idea, projects, isThinking, isExpanding, onIdea, onBegin, onExpand, onPrompt, onOpen, onOpenFile }: HomeProps) {
+function HomeView({ idea, projects, isThinking, isExpanding, isAnalyzing, promptVersions, promptAnalysis, onIdea, onBegin, onExpand, onAnalyze, onSaveVersion, onRestoreVersion, onDeleteVersion, onPrompt, onOpen, onOpenFile }: HomeProps) {
   return (
     <div className="home-view">
       <header className="topbar">
@@ -256,13 +303,37 @@ function HomeView({ idea, projects, isThinking, isExpanding, onIdea, onBegin, on
           />
           <div className="composer-footer">
             <span><WandSparkles size={15} /> 说出故事、画面或一种感觉</span>
-            <button type="button" className="primary-button" onClick={onBegin} disabled={!idea.trim() || isThinking || isExpanding}>
-              {isThinking ? <span className="spinner" /> : <Clapperboard size={17} />}
-              {isThinking ? "正在构思" : "开始创作电影"}
-              {!isThinking && <ArrowRight size={16} />}
-            </button>
+            <div className="composer-actions">
+              <button type="button" className="composer-tool-button" onClick={onSaveVersion} disabled={!idea.trim()}><Save size={14} /> 保存版本</button>
+              <button type="button" className="composer-tool-button analyze-button" onClick={onAnalyze} disabled={!idea.trim() || isAnalyzing || isExpanding}>
+                {isAnalyzing ? <span className="mini-spinner" /> : <Sparkles size={14} />} {isAnalyzing ? "分析中" : "AI 视频分析"}
+              </button>
+              <button type="button" className="primary-button" onClick={onBegin} disabled={!idea.trim() || isThinking || isExpanding || isAnalyzing}>
+                {isThinking ? <span className="spinner" /> : <Clapperboard size={17} />}
+                {isThinking ? "正在构思" : "开始创作电影"}
+                {!isThinking && <ArrowRight size={16} />}
+              </button>
+            </div>
           </div>
         </div>
+        {(promptVersions.length > 0 || promptAnalysis) && <div className="prompt-workspace">
+          {promptAnalysis && <section className="analysis-card">
+            <div className="analysis-heading"><span className={`analysis-score verdict-${promptAnalysis.verdict}`}>{promptAnalysis.score}</span><div><b>{promptAnalysis.verdict}生成视频</b><p>{promptAnalysis.summary}</p></div></div>
+            <div className="analysis-columns">
+              <div><strong>优势</strong>{promptAnalysis.strengths.length ? <ul>{promptAnalysis.strengths.map((item) => <li key={item}>{item}</li>)}</ul> : <p>暂无明显优势</p>}</div>
+              <div><strong>风险</strong>{promptAnalysis.risks.length ? <ul>{promptAnalysis.risks.map((item) => <li key={item}>{item}</li>)}</ul> : <p>暂无明显风险</p>}</div>
+              <div><strong>优化建议</strong>{promptAnalysis.suggestions.length ? <ul>{promptAnalysis.suggestions.map((item) => <li key={item}>{item}</li>)}</ul> : <p>无需额外优化</p>}</div>
+            </div>
+          </section>}
+          {promptVersions.length > 0 && <details className="version-history">
+            <summary><History size={14} /> 提示词版本 <span>{promptVersions.length}</span></summary>
+            <div className="version-list">{promptVersions.map((version, index) => <article key={version.id}>
+              <button className="version-content" onClick={() => onRestoreVersion(version)} title="恢复这个版本"><b>V{promptVersions.length - index}</b><span>{version.content}</span></button>
+              <time>{new Date(version.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</time>
+              <button className="version-delete" onClick={() => onDeleteVersion(version.id)} aria-label="删除版本">删除</button>
+            </article>)}</div>
+          </details>}
+        </div>}
         <div className="prompt-row">
           <span>试试灵感</span>
           {prompts.map((prompt) => (

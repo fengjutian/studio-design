@@ -15,6 +15,7 @@ export {
   Home,
   KeyRound,
   Layers3,
+  History,
   MessageCircleMore,
   MoreHorizontal,
   Music2,
@@ -28,5 +29,6 @@ export {
   Sparkles,
   Volume2,
   WandSparkles,
+  Save,
 } from "lucide-react";
 export type { LucideIcon, LucideProps } from "lucide-react";
