@@ -101,6 +101,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .analysis-heading { display: flex; gap: 12px; align-items: center; }
 .analysis-heading b { font-size: 13px; }
 .analysis-heading p { margin: 4px 0 0; color: #85827c; font-size: 11px; }
+.optimize-prompt-button { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid rgba(214,255,63,.22); border-radius: 8px; color: var(--accent); background: rgba(214,255,63,.06); cursor: pointer; font-size: 9px; }
+.optimize-prompt-button:disabled { opacity: .5; cursor: default; }
 .analysis-score { width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(214,255,63,.3); color: var(--accent); background: rgba(214,255,63,.07); font-weight: 700; }
 .analysis-score.verdict-不适合 { color: #df8a7b; border-color: rgba(223,138,123,.3); background: rgba(223,138,123,.07); }
 .analysis-score.verdict-需要优化 { color: #dcc173; border-color: rgba(220,193,115,.3); background: rgba(220,193,115,.07); }
@@ -181,6 +183,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .prompt-compare article span { color: #aaa7a1; font-size: 10px; }
 .prompt-compare article small { float: right; color: #5f5d59; font-size: 8px; }
 .prompt-compare article p { margin: 9px 0 0; color: #aaa7a1; font-size: 11px; line-height: 1.75; white-space: pre-wrap; }
+.prompt-compare mark { color: inherit; background: transparent; }
+.prompt-compare .diff-added { color: #dfff78; background: rgba(126,180,55,.2); text-decoration: none; }
+.prompt-compare .diff-removed { color: #e5a096; background: rgba(210,80,65,.16); text-decoration: line-through; }
 .prompt-library-card { display: grid; grid-template-columns: minmax(0, 1fr) 290px auto; gap: 15px 20px; align-items: center; padding: 17px 18px; border: 1px solid var(--line); border-radius: 13px; background: #141416; }
 .prompt-library-card:hover { border-color: rgba(214,255,63,.22); }
 .prompt-library-card.selected { border-color: rgba(214,255,63,.42); }
@@ -228,6 +233,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .generation-snapshot details p { max-height: 180px; overflow: auto; margin: 8px 0; color: #77746f; font-size: 9px; line-height: 1.6; white-space: pre-wrap; }
 .generation-snapshot details button { padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; color: #8d8a84; background: transparent; cursor: pointer; font-size: 8px; }
 .generation-snapshot > small { margin-top: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-prompt-editor textarea { min-height: 150px; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 9px; line-height: 1.55; }
+.shot-prompt-editor > small { display: block; margin: 5px 0 8px; color: #66635f; font-size: 8px; text-align: right; }
 
 @media (max-width: 1000px) {
   .prompt-library-card { grid-template-columns: 1fr; }

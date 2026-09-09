@@ -31,7 +31,7 @@ import {
   Volume2,
 } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { analyzeVideoPrompt, developIdea, expandIdea } from "@/features/director";
+import { analyzeVideoPrompt, developIdea, expandIdea, optimizeVideoPrompt } from "@/features/director";
 import { buildShotPrompt, getActiveProviderName, getModelDefinition, getProviderDefinition, getVideoProvider, providerDefinitions, selectProvider, supportedVideoDuration } from "@/features/generation";
 import { createProjectDirectory, isDesktopApp, openProjectFile, saveProjectFile } from "@/features/projects";
 import { checkExportReadiness, exportMovie } from "./lib/exportMovie";
@@ -70,6 +70,7 @@ export default function App() {
   const [isThinking, setIsThinking] = useState(false);
   const [isExpanding, setIsExpanding] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [promptVersions, setPromptVersions] = useState<PromptVersion[]>(loadPromptVersions);
   const [promptAnalysis, setPromptAnalysis] = useState<PromptAnalysis | null>(null);
   const [settings, setSettings] = useState<GenerationSettings>(loadSettings);
@@ -160,6 +161,23 @@ export default function App() {
     }
   };
 
+  const optimizePrompt = async () => {
+    if (!promptAnalysis || isOptimizing) return;
+    setIsOptimizing(true);
+    try {
+      addPromptVersion(idea, "manual");
+      const optimized = await optimizeVideoPrompt(idea, promptAnalysis, settings, apiKey);
+      setIdea(optimized);
+      addPromptVersion(optimized, "optimized");
+      setPromptAnalysis(null);
+      showNotice("已生成优化版本，原提示词已保留，可在版本库中对比。", 3200);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
   const accept = () => {
     if (!active) return;
     const next = { ...active, updatedAt: new Date().toISOString() };
@@ -226,12 +244,14 @@ export default function App() {
             isThinking={isThinking}
             isExpanding={isExpanding}
             isAnalyzing={isAnalyzing}
+            isOptimizing={isOptimizing}
             promptVersions={promptVersions}
             promptAnalysis={promptAnalysis}
             onIdea={(value) => { setIdea(value); setPromptAnalysis(null); }}
             onBegin={begin}
             onExpand={expandPrompt}
             onAnalyze={analyzePrompt}
+            onOptimize={optimizePrompt}
             onSaveVersion={() => savePromptVersion()}
             onRestoreVersion={(version) => { setIdea(version.content); setPromptAnalysis(null); }}
             onDeleteVersion={(id) => setPromptVersions((current) => current.filter((item) => item.id !== id))}
@@ -282,12 +302,14 @@ interface HomeProps {
   isThinking: boolean;
   isExpanding: boolean;
   isAnalyzing: boolean;
+  isOptimizing: boolean;
   promptVersions: PromptVersion[];
   promptAnalysis: PromptAnalysis | null;
   onIdea: (value: string) => void;
   onBegin: () => void;
   onExpand: () => void;
   onAnalyze: () => void;
+  onOptimize: () => void;
   onSaveVersion: () => void;
   onRestoreVersion: (version: PromptVersion) => void;
   onDeleteVersion: (id: string) => void;
@@ -296,7 +318,7 @@ interface HomeProps {
   onOpenFile: () => void;
 }
 
-function HomeView({ idea, projects, isThinking, isExpanding, isAnalyzing, promptVersions, promptAnalysis, onIdea, onBegin, onExpand, onAnalyze, onSaveVersion, onRestoreVersion, onDeleteVersion, onPrompt, onOpen, onOpenFile }: HomeProps) {
+function HomeView({ idea, projects, isThinking, isExpanding, isAnalyzing, isOptimizing, promptVersions, promptAnalysis, onIdea, onBegin, onExpand, onAnalyze, onOptimize, onSaveVersion, onRestoreVersion, onDeleteVersion, onPrompt, onOpen, onOpenFile }: HomeProps) {
   return (
     <div className="home-view">
       <header className="topbar">
@@ -344,7 +366,7 @@ function HomeView({ idea, projects, isThinking, isExpanding, isAnalyzing, prompt
         </div>
         {(promptVersions.length > 0 || promptAnalysis) && <div className="prompt-workspace">
           {promptAnalysis && <section className="analysis-card">
-            <div className="analysis-heading"><span className={`analysis-score verdict-${promptAnalysis.verdict}`}>{promptAnalysis.score}</span><div><b>{promptAnalysis.verdict}生成视频</b><p>{promptAnalysis.summary}</p></div></div>
+            <div className="analysis-heading"><span className={`analysis-score verdict-${promptAnalysis.verdict}`}>{promptAnalysis.score}</span><div><b>{promptAnalysis.verdict}生成视频</b><p>{promptAnalysis.summary}</p></div><button type="button" className="optimize-prompt-button" disabled={isOptimizing} onClick={onOptimize}>{isOptimizing ? <span className="mini-spinner" /> : <Sparkles size={13} />}{isOptimizing ? "正在优化" : "按建议生成优化版"}</button></div>
             <div className="analysis-columns">
               <div><strong>优势</strong>{promptAnalysis.strengths.length ? <ul>{promptAnalysis.strengths.map((item) => <li key={item}>{item}</li>)}</ul> : <p>暂无明显优势</p>}</div>
               <div><strong>风险</strong>{promptAnalysis.risks.length ? <ul>{promptAnalysis.risks.map((item) => <li key={item}>{item}</li>)}</ul> : <p>暂无明显风险</p>}</div>

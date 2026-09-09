@@ -3,6 +3,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { Film, History, Play, RotateCcw } from "@/components/icons";
 import type { MovieProject, PromptVersion } from "@/types";
 import { isDesktopApp } from "@/features/projects";
+import { diffPromptVersions } from "@/lib/promptDiff";
 
 const sourceLabels: Record<PromptVersion["source"], string> = {
   manual: "手动保存", "before-expand": "扩写前", expanded: "AI 扩写", optimized: "AI 优化", project: "创建电影",
@@ -28,6 +29,7 @@ export function PromptVersionsView({ versions, projects, onRestore, onOpenProjec
     return matchesQuery && matchesFilter;
   });
   const compared = selected.map((id) => versions.find((version) => version.id === id)).filter((value): value is PromptVersion => !!value);
+  const comparison = compared.length === 2 ? diffPromptVersions(compared[0].content, compared[1].content) : undefined;
   const toggleCompare = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 2 ? [...current, id] : [current[1], id]);
 
   return <div className="library-view">
@@ -41,7 +43,7 @@ export function PromptVersionsView({ versions, projects, onRestore, onOpenProjec
       </div>
       {compared.length === 2 && <section className="prompt-compare">
         <div className="compare-heading"><b>版本对比</b><button type="button" onClick={() => setSelected([])}>关闭</button></div>
-        <div>{compared.map((version) => <article key={version.id}><span>{version.name || sourceLabels[version.source]}</span><small>{version.content.length} 字</small><p>{version.content}</p></article>)}</div>
+        <div>{compared.map((version, index) => <article key={version.id}><span>{version.name || sourceLabels[version.source]}</span><small>{version.content.length} 字</small><p>{(index === 0 ? comparison?.before : comparison?.after)?.map((part, partIndex) => <mark className={`diff-${part.type}`} key={partIndex}>{part.value}</mark>)}</p></article>)}</div>
       </section>}
       {versions.length === 0 ? <div className="library-empty"><History size={34} /><h2>还没有提示词版本</h2><p>在首页保存提示词，或开始创作电影后会自动建立关联版本。</p></div> :
       visible.length === 0 ? <div className="library-empty compact-empty"><History size={28} /><h2>没有匹配的版本</h2><p>尝试更换关键词或筛选条件。</p></div> :
