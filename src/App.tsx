@@ -504,7 +504,9 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const previousShot = selected ? getPreviousTimelineShot(project, selected.id) : undefined;
   const sameSceneTransition = Boolean(selected && usesPreviousFrame(selected, project));
   const continuityBlocked = Boolean(sameSceneTransition && !isUsableContinuitySource(previousShot));
-  const directionIssue = selected ? firstFrameIssue(selected) : undefined;
+  const selectedScene = project.scenes.find((scene) => scene.shots.some((shot) => shot.id === selected?.id));
+  const establishingReference = selected?.firstFrame ?? selectedScene?.visualReference ?? project.visualReference;
+  const directionIssue = selected ? firstFrameIssue(selected, project) : undefined;
 
   useEffect(() => {
     previewAdvancePendingRef.current = false;
@@ -674,7 +676,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     const { savedAt: _, ...restored } = version;
     const referenceMatches = restored.sourceFrame
       ? previousShot?.id === restored.sourceFrame.shotId && previousShot.taskId === restored.sourceFrame.taskId && previousShot.localAssetPath === restored.sourceFrame.path && continuityFrameTime(previousShot) === restored.sourceFrame.seconds && !previousShot.continuityStale
-      : !sameSceneTransition && restored.visualReferenceName === project.visualReference?.name;
+      : !sameSceneTransition && restored.visualReferenceName === (selectedScene?.visualReference ?? project.visualReference)?.name;
     const next = { ...project, updatedAt: new Date().toISOString(), scenes: project.scenes.map((scene) => ({ ...scene, shots: scene.shots.map((shot) => shot.id === selected.id ? { ...restored, versions: archived.versions, generationStatus: "completed" as const, continuityStale: !!restored.continuityStale || !referenceMatches } : shot) })) };
     onUpdate(invalidateDownstreamContinuity(next, selected.id));
   };
@@ -778,7 +780,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             ) : selected?.generationStatus === "failed" ? (
               <div className="failed-state"><AlertCircle size={32} /><h3>这个镜头没有拍成</h3><p>{selected.generationError}</p><button className="secondary-button" onClick={() => void generate(selected.taskId ? false : true)}><RotateCcw size={16} /> {selected.taskId ? "继续查询" : "再试一次"}</button></div>
             ) : (
-              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>{sameSceneTransition && previousShot ? `将自动使用“${previousShot.title}”的尾帧续拍。` : project.visualReference ? `将使用项目视觉基准“${project.visualReference.name}”建立这个场景。` : "尚未设置视觉基准，将仅根据导演设定生成。"}</p><button className="primary-button" onClick={() => void generate(true)}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
+              <div className="empty-canvas"><Clapperboard size={35} strokeWidth={1.3} /><h3>镜头等待开拍</h3><p>{sameSceneTransition && previousShot ? `连续性来源：将使用“${previousShot.title}”的尾帧续拍。` : establishingReference ? `连续性来源：将使用视觉基准“${establishingReference.name}”。` : "连续性来源：缺失，请先设置视觉基准或导入镜头首帧。"}</p><button className="primary-button" onClick={() => void generate(true)}><WandSparkles size={17} /> 生成这个镜头</button><small>{settings.provider === "mock" ? "当前使用体验模式，不会产生费用" : `${settings.model} · ${settings.resolution} · 生成 ${supportedVideoDuration(selected?.duration ?? 6)} 秒，成片保留 ${selected?.duration ?? 6} 秒`}</small></div>
             )}
           </div>
           {selected?.generationStatus === "completed" && selectedSource && <div className="trim-editor"><span><Scissors size={13} /> 裁剪</span><label>入点 <input type="range" min={0} max={Math.max(.2, (selected.trimEnd ?? selected.duration) - .1)} step="0.1" value={selected.trimStart ?? 0} onChange={(event) => updateTrim("trimStart", Number(event.target.value))} /><b>{(selected.trimStart ?? 0).toFixed(1)}s</b></label><label>出点 <input type="range" min={Math.min(selected.duration - .1, (selected.trimStart ?? 0) + .1)} max={selected.duration} step="0.1" value={selected.trimEnd ?? selected.duration} onChange={(event) => updateTrim("trimEnd", Number(event.target.value))} /><b>{(selected.trimEnd ?? selected.duration).toFixed(1)}s</b></label></div>}

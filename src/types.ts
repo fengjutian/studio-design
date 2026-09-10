@@ -77,6 +77,7 @@ export interface Scene {
   title: string;
   location: string;
   mood: string;
+  visualReference?: VisualReference;
   shots: Shot[];
 }
 

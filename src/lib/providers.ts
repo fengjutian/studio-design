@@ -29,7 +29,6 @@ export interface VideoProvider {
 }
 
 export function buildShotPrompt(shot: Shot, project: MovieProject) {
-  if (shot.generationPromptOverride?.trim()) return shot.generationPromptOverride.trim();
   const motion = cameraCommand(shot.movement);
   const orderedShots = getOrderedShots(project);
   const shotIndex = orderedShots.findIndex((item) => item.id === shot.id);
@@ -43,7 +42,7 @@ export function buildShotPrompt(shot: Shot, project: MovieProject) {
     transitionMode(shot, project) === "cut" && "CAMERA CUT: use the approved opening composition. Preserve character identity and screen direction; do not morph from the previous camera angle.",
     transitionMode(shot, project) === "scene" && "NEW SCENE: establish the specified location and opening composition. Preserve character identity; do not carry over the previous background or action.",
     ...(project.characters ?? []).filter((character) => shot.characterIds?.includes(character.id)).map((character) => `CHARACTER ${character.name}: ${character.description}`),
-    `CURRENT SHOT: ${shot.description}`,
+    `CURRENT SHOT: ${shot.generationPromptOverride?.trim() || shot.description}`,
     project.directorStyle?.prompt && `DIRECTOR STYLE (${project.directorStyle.name}): ${project.directorStyle.prompt}. Apply to presentation only; preserve this shot's action, character identity and approved composition.`,
     actionStart(shot, project) && `ACTION START STATE: ${actionStart(shot, project)}`,
     shot.actionPlan?.action.trim() && `PRIMARY ACTION: ${shot.actionPlan.action.trim()}. Perform this single action; do not add unrelated attacks, jumps or turns.`,
@@ -105,7 +104,7 @@ const minimaxProvider: VideoProvider = {
     let continuitySource: Shot | undefined;
     let firstFrameImage: string | undefined;
     if (!shot.taskId) {
-      const issue = firstFrameIssue(shot);
+      const issue = firstFrameIssue(shot, project);
       if (issue) throw new Error(issue);
       continuitySource = getContinuitySource(shot, project);
       if (usesPreviousFrame(shot, project) && !continuitySource) throw new Error("动作延续需要上一镜头已完成且连续性有效，请先完成上一镜头或切换衔接方式。");
@@ -116,9 +115,10 @@ const minimaxProvider: VideoProvider = {
       } else if (source) {
         onProgress?.("正在提取上一镜头尾帧", 0);
         firstFrameImage = await invoke<string>("extract_video_last_frame", { source, seconds: continuityFrameTime(continuitySource!) });
-      } else if (project.visualReference && project.localPath) {
+      } else if ((sceneReference(shot, project) ?? project.visualReference) && project.localPath) {
         onProgress?.("正在载入项目视觉基准帧", 0);
-        firstFrameImage = await invoke<string>("read_project_image_data_url", { projectPath: project.localPath, path: project.visualReference.localPath });
+        const reference = sceneReference(shot, project) ?? project.visualReference!;
+        firstFrameImage = await invoke<string>("read_project_image_data_url", { projectPath: project.localPath, path: reference.localPath });
       }
     }
 
@@ -152,7 +152,7 @@ const minimaxProvider: VideoProvider = {
           localAssetPath,
           generatedFirstFramePath: shot.firstFrame?.localPath ?? (shot.taskId ? shot.generatedFirstFramePath : undefined),
           continuitySourceShotId: continuitySource?.id ?? shot.continuitySourceShotId,
-          visualReferenceName: shot.firstFrame?.name ?? (shot.taskId ? shot.visualReferenceName : !continuitySource && firstFrameImage ? project.visualReference?.name : undefined),
+          visualReferenceName: shot.firstFrame?.name ?? (shot.taskId ? shot.visualReferenceName : !continuitySource && firstFrameImage ? (sceneReference(shot, project) ?? project.visualReference)?.name : undefined),
         };
       }
       if (["Fail", "Failed"].includes(result.status)) throw new Error(result.errorMessage || "MiniMax 未能生成这个镜头。");
@@ -171,6 +171,10 @@ function getOrderedShots(project: MovieProject) {
   const ordered = project.timelineOrder.flatMap((id) => byId.get(id) ?? []);
   const included = new Set(ordered.map((shot) => shot.id));
   return [...ordered, ...shots.filter((shot) => !included.has(shot.id))];
+}
+
+function sceneReference(shot: Shot, project: MovieProject) {
+  return project.scenes.find((scene) => scene.shots.some((candidate) => candidate.id === shot.id))?.visualReference;
 }
 
 interface MiniMaxTaskResult {

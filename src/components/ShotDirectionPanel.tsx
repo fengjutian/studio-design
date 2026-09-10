@@ -20,6 +20,15 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
   function updateCharacters(characters: CharacterAsset[]) {
     onUpdate({ ...invalidateAllContinuity(latest.current), characters, updatedAt: new Date().toISOString() });
   }
+  function updateSceneReference(reference?: VisualReference) {
+    const current = latest.current;
+    const invalidated = invalidateAllContinuity(current);
+    onUpdate({
+      ...invalidated,
+      scenes: invalidated.scenes.map((scene) => scene.shots.some((item) => item.id === shot.id) ? { ...scene, visualReference: reference } : scene),
+      updatedAt: new Date().toISOString(),
+    });
+  }
   async function importImage(characterId?: string) {
     if (!project.localPath) { onSave(); return; }
     const shotId = shot.id;
@@ -33,6 +42,16 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     } catch (reason) { setError(String(reason)); }
     finally { setBusy(false); }
   }
+  async function importSceneImage() {
+    if (!project.localPath) { onSave(); return; }
+    setBusy(true); setError("");
+    try {
+      const image = await invoke<{ path: string; name: string } | null>("import_visual_reference", { projectPath: project.localPath });
+      if (image) updateSceneReference({ name: image.name, localPath: image.path });
+    } catch (reason) { setError(String(reason)); }
+    finally { setBusy(false); }
+  }
+  const scene = project.scenes.find((item) => item.shots.some((candidate) => candidate.id === shot.id));
   return <section className="shot-direction">
     <h3>分镜与角色</h3>
     <label>衔接方式<select disabled={locked} value={transitionMode(shot, project)} onChange={(event) => updateShot({ transitionMode: event.target.value as Shot["transitionMode"] })}><option value="continue">动作延续</option><option value="cut">切换机位</option><option value="scene">转场</option></select></label>
@@ -41,7 +60,9 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     <ActionEditor key={`${shot.id}-${JSON.stringify(shot.actionPlan)}`} shot={shot} project={project} disabled={locked} onSave={(actionPlan) => updateShot({ actionPlan })} />
     <button disabled={locked} onClick={() => void importImage()}>{shot.firstFrame ? "替换镜头首帧" : "导入镜头首帧"}</button>
     {shot.firstFrame && <><img className="direction-preview" src={convertFileSrc(shot.firstFrame.localPath)} alt={`分镜首帧：${shot.firstFrame.name}`} /><label><input type="checkbox" checked={!!shot.firstFrameApproved} disabled={locked} onChange={(event) => updateShot({ firstFrameApproved: event.target.checked })} />已核对角色、站位和构图</label><button disabled={locked} onClick={() => updateShot({ firstFrame: undefined, firstFrameApproved: false })}>移除首帧引用</button></>}
-    <p>当前已接入的视频适配器只传一张首帧。角色图片用于预审，选中角色的文字设定会加入提示词。</p>
+    <button disabled={locked} onClick={() => void importSceneImage()}>{scene?.visualReference ? "更换场景视觉基准" : "设置场景视觉基准"}</button>
+    {scene?.visualReference && <><img className="direction-preview" src={convertFileSrc(scene.visualReference.localPath)} alt={`场景视觉基准：${scene.visualReference.name}`} /><button disabled={locked} onClick={() => updateSceneReference(undefined)}>移除场景视觉基准</button></>}
+    <p>参考优先级：镜头首帧、上一镜头尾帧、场景视觉基准、项目视觉基准。当前适配器每次只传一张图片。</p>
     <ShotPromptEditor key={`${shot.id}-${shot.generationPromptOverride ?? "auto"}`} shot={shot} project={project} disabled={locked} onSave={(generationPromptOverride) => updateShot({ generationPromptOverride })} />
     <button disabled={locked} onClick={() => updateCharacters([...(project.characters ?? []), { id: crypto.randomUUID(), name: "新角色", description: "", images: [] }])}>添加角色</button>
     {(project.characters ?? []).map((character) => <details key={character.id}><summary>{character.name || "未命名角色"} · {character.images.length} 张图</summary>
@@ -61,7 +82,7 @@ function ShotPromptEditor({ shot, project, disabled, onSave }: { shot: Shot; pro
   const customized = !!shot.generationPromptOverride;
   return <details className="shot-prompt-editor">
     <summary>最终生成提示词 {customized ? "· 已自定义" : "· 自动合成"}</summary>
-    <p>这里的内容会原样发送给视频模型，并记录到生成快照。</p>
+    <p>这里的内容替换当前镜头描述；角色、场景、风格和连续性约束仍会自动附加并记录到生成快照。</p>
     <textarea disabled={disabled} value={value} maxLength={2000} rows={9} onChange={(event) => setValue(event.target.value)} />
     <small>{value.length}/2000 字符</small>
     <button disabled={disabled || !value.trim()} onClick={() => onSave(value.trim())}>锁定此镜头提示词</button>

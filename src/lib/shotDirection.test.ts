@@ -16,7 +16,7 @@ describe("shot direction", () => {
     expect(getContinuitySource(second, project)).toBe(first);
     second.transitionMode = "cut";
     expect(getContinuitySource(second, project)).toBeUndefined();
-    expect(firstFrameIssue(second)).toBeTruthy();
+    expect(firstFrameIssue(second, project)).toBeTruthy();
     expect(buildShotPrompt(second, project)).not.toContain("CONTINUE DIRECTLY");
   });
 
@@ -25,9 +25,9 @@ describe("shot direction", () => {
     const shot = project.scenes[0].shots[1];
     shot.firstFrame = { name: "分镜", localPath: "frame.png" };
     expect(usesPreviousFrame(shot, project)).toBe(false);
-    expect(firstFrameIssue(shot)).toBeTruthy();
+    expect(firstFrameIssue(shot, project)).toBeTruthy();
     shot.firstFrameApproved = true;
-    expect(firstFrameIssue(shot)).toBeUndefined();
+    expect(firstFrameIssue(shot, project)).toBeUndefined();
     project.characters = [{ id: "cat", name: "橘猫", description: "白色左前爪", images: [] }, { id: "other", name: "黑猫", description: "蓝色围巾", images: [] }];
     shot.characterIds = ["cat"];
     expect(buildShotPrompt(shot, project)).toContain("白色左前爪");
