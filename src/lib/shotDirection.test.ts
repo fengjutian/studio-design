@@ -51,4 +51,11 @@ describe("shot direction", () => {
       expect(mocked.mock.calls.some(([command]) => command === "extract_video_last_frame")).toBe(false);
     } finally { vi.unstubAllGlobals(); }
   });
+
+  it("blocks an inferred new scene when no visual reference exists", () => {
+    const project = createDirectorProposal("雨夜");
+    expect(firstFrameIssue(project.scenes[0].shots[0], project)).toContain("视觉基准");
+    project.visualReference = { name: "look.png", localPath: "look.png" };
+    expect(firstFrameIssue(project.scenes[0].shots[0], project)).toBeUndefined();
+  });
 });

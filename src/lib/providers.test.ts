@@ -12,6 +12,16 @@ describe("buildShotPrompt", () => {
     expect(prompt).toContain("CONTINUE DIRECTLY FROM PREVIOUS SHOT");
     expect(prompt).toContain("no watermark");
   });
+
+  it("keeps continuity constraints around a custom shot description", () => {
+    const project = createDirectorProposal("雨夜");
+    const shot = project.scenes[0].shots[1];
+    shot.generationPromptOverride = "橘猫停下并回头";
+    const prompt = buildShotPrompt(shot, project);
+    expect(prompt).toContain("CURRENT SHOT: 橘猫停下并回头");
+    expect(prompt).toContain("PROJECT CONTINUITY BIBLE");
+    expect(prompt).toContain("CONTINUE DIRECTLY FROM PREVIOUS SHOT");
+  });
 });
 
 describe("getContinuitySource", () => {

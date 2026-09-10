@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDirectorProposal } from "./director";
-import { actionStart, framingWarning } from "./shotDirection";
+import { actionStart, framingWarning, transitionMode } from "./shotDirection";
 import { buildShotPrompt } from "./providers";
 
 describe("action continuity", () => {
@@ -16,11 +16,12 @@ describe("action continuity", () => {
     second.transitionMode = "scene";
     expect(actionStart(second, project)).toBe("手动起点");
   });
-  it("warns about wide-to-close continuation without overriding user direction", () => {
+  it("defaults a wide-to-close change to a camera cut", () => {
     const project = createDirectorProposal("雨夜");
     const [first, second] = project.scenes[0].shots;
     first.framing = "全景"; second.framing = "特写";
-    expect(framingWarning(second, project)).toContain("建议切换机位");
+    expect(transitionMode(second, project)).toBe("cut");
+    expect(framingWarning(second, project)).toBeUndefined();
     second.transitionMode = "cut";
     expect(framingWarning(second, project)).toBeUndefined();
     expect(second.transitionMode).toBe("cut");
