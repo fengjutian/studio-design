@@ -5,6 +5,7 @@ import { actionStart, framingWarning, transitionMode } from "../lib/shotDirectio
 import { archiveShot } from "../lib/continuityFrames";
 import { invalidateAllContinuity, invalidateDownstreamContinuity } from "../lib/timeline";
 import { buildShotPrompt } from "../lib/providers";
+import { auditShotContinuity } from "../lib/continuityAudit";
 
 export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }: { project: MovieProject; shot: Shot; disabled: boolean; onUpdate: (project: MovieProject) => void; onSave: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -52,8 +53,10 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     finally { setBusy(false); }
   }
   const scene = project.scenes.find((item) => item.shots.some((candidate) => candidate.id === shot.id));
+  const auditItems = auditShotContinuity(project, shot);
   return <section className="shot-direction">
     <h3>分镜与角色</h3>
+    <details open={auditItems.length > 0} className="continuity-audit"><summary>生成前一致性体检 · {auditItems.length ? `${auditItems.length} 项建议` : "通过"}</summary>{auditItems.length > 0 ? <ul>{auditItems.map((item) => <li key={item.code}>{item.message}</li>)}</ul> : <p>角色、参考画面、机位与动作衔接未发现明显风险。</p>}</details>
     <label>衔接方式<select disabled={locked} value={transitionMode(shot, project)} onChange={(event) => updateShot({ transitionMode: event.target.value as Shot["transitionMode"] })}><option value="continue">动作延续</option><option value="cut">切换机位</option><option value="scene">转场</option></select></label>
     <p>动作延续默认接上一镜头出点；切换机位或转场使用本镜头确认后的首帧。</p>
     {framingWarning(shot, project) && <p role="status">{framingWarning(shot, project)}</p>}
