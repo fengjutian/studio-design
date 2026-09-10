@@ -490,6 +490,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const [mediaErrorShotId, setMediaErrorShotId] = useState<string | null>(null);
   const [timelinePanning, setTimelinePanning] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewAdvancePendingRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const timelineScrollRef = useRef<HTMLDivElement>(null);
   const timelineDragRef = useRef<{ pointerId: number; startX: number; scrollLeft: number } | null>(null);
@@ -497,12 +498,18 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const selected = allShots.find((shot) => shot.id === selectedShotId) ?? allShots[0];
   const totalDuration = allShots.reduce((sum, item) => sum + shotPlaybackDuration(item), 0);
   const selectedSource = (selected?.localAssetPath && isDesktopApp() ? convertFileSrc(selected.localAssetPath) : undefined) ?? selected?.videoUrl;
+  const selectedIndex = allShots.findIndex((shot) => shot.id === selected?.id);
+  const nextPlayableShot = allShots.slice(selectedIndex + 1).find((shot) => shot.videoUrl || shot.localAssetPath);
+  const nextPlayableSource = (nextPlayableShot?.localAssetPath && isDesktopApp() ? convertFileSrc(nextPlayableShot.localAssetPath) : undefined) ?? nextPlayableShot?.videoUrl;
   const previousShot = selected ? getPreviousTimelineShot(project, selected.id) : undefined;
   const sameSceneTransition = Boolean(selected && usesPreviousFrame(selected, project));
   const continuityBlocked = Boolean(sameSceneTransition && !isUsableContinuitySource(previousShot));
   const directionIssue = selected ? firstFrameIssue(selected) : undefined;
 
-  useEffect(() => setMediaErrorShotId(null), [selected?.id, selectedSource]);
+  useEffect(() => {
+    previewAdvancePendingRef.current = false;
+    setMediaErrorShotId(null);
+  }, [selected?.id, selectedSource]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -632,9 +639,11 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   };
 
   const advancePreview = () => {
-    const index = allShots.findIndex((shot) => shot.id === selected?.id);
-    const next = allShots.slice(index + 1).find((shot) => shot.videoUrl || shot.localAssetPath);
-    if (playingTimeline && next) onSelectShot(next.id);
+    if (previewAdvancePendingRef.current) return;
+    if (playingTimeline && nextPlayableShot) {
+      previewAdvancePendingRef.current = true;
+      onSelectShot(nextPlayableShot.id);
+    }
     else {
       setPlayingTimeline(false);
       if (audioRef.current) audioRef.current.pause();
@@ -761,7 +770,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
             ) : showContinuityWarnings(selected) && selected?.continuityStale ? (
               <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">CONTINUITY OUTDATED</span><h3>连续性参考已经过期</h3><p>前序镜头发生了变化，这个视频仍基于旧画面生成。请重新生成以接续最新尾帧。</p><div className="recovery-actions"><button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 按最新尾帧重新生成</button></div></div>
             ) : selected?.generationStatus === "completed" ? (
-              selectedSource && mediaErrorShotId !== selected.id ? <video ref={videoRef} className="generated-video" src={selectedSource} controls={!playingTimeline} onError={() => { setPlayingTimeline(false); setMediaErrorShotId(selected.id); }} onLoadedData={() => setMediaErrorShotId(null)} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} /> : <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">VIDEO LINK EXPIRED</span><h3>视频链接已经失效</h3><p>{selected.taskId ? "原生成任务还在，可以先重新获取；也可以创建一个全新视频任务。" : "旧视频无法恢复，可以重新生成这个镜头。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="secondary-button compact" onClick={() => void generate()}><RotateCcw size={15} /> 重新获取</button>}<button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 重新生成</button></div></div>
+              selectedSource && mediaErrorShotId !== selected.id ? <><video ref={videoRef} className="generated-video" src={selectedSource} preload="auto" controls={!playingTimeline} onError={() => { setPlayingTimeline(false); setMediaErrorShotId(selected.id); }} onLoadedData={() => setMediaErrorShotId(null)} onEnded={advancePreview} onTimeUpdate={(event) => { if (playingTimeline && event.currentTarget.currentTime >= Math.min(selected.trimEnd ?? selected.duration, selected.duration)) advancePreview(); }} />{playingTimeline && nextPlayableSource && <video className="timeline-video-preload" src={nextPlayableSource} preload="auto" muted playsInline aria-hidden="true" />}</> : <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">VIDEO LINK EXPIRED</span><h3>视频链接已经失效</h3><p>{selected.taskId ? "原生成任务还在，可以先重新获取；也可以创建一个全新视频任务。" : "旧视频无法恢复，可以重新生成这个镜头。"}</p>{selected.taskId && <code>Task ID · {selected.taskId}</code>}<div className="recovery-actions">{selected.taskId && <button className="secondary-button compact" onClick={() => void generate()}><RotateCcw size={15} /> 重新获取</button>}<button className="primary-button compact" onClick={() => void generate(true)}><WandSparkles size={15} /> 重新生成</button></div></div>
             ) : selected?.generationStatus === "generating" && activeGenerationId === selected.id ? (
               <div className="generating-state"><div className="generation-orbit"><Sparkles size={24} /></div><h3>正在拍摄这个镜头</h3><p>{generationProgress}</p></div>
             ) : selected?.generationStatus === "generating" ? (
