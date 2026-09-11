@@ -93,6 +93,17 @@ struct ImportedImage {
 }
 
 #[derive(Deserialize)]
+struct ImageGenerationResponse {
+    data: ImageGenerationData,
+    base_resp: BaseResponse,
+}
+
+#[derive(Deserialize)]
+struct ImageGenerationData {
+    image_urls: Vec<String>,
+}
+
+#[derive(Deserialize)]
 struct ChatCompletionResponse {
     choices: Vec<ChatChoice>,
     base_resp: BaseResponse,
@@ -361,6 +372,54 @@ async fn import_visual_reference(project_path: String) -> Result<Option<Imported
     })
     .await
     .map_err(|error| format!("Import visual reference task failed: {error}"))?
+}
+
+#[tauri::command]
+async fn minimax_generate_first_frame(
+    api_key: String,
+    project_path: String,
+    shot_id: String,
+    prompt: String,
+) -> Result<ImportedImage, String> {
+    validate_key(&api_key)?;
+    if prompt.trim().is_empty() || prompt.chars().count() > 1500 {
+        return Err("首帧描述必须在 1 到 1500 个字符之间。".into());
+    }
+    let project = std::fs::canonicalize(project_path)
+        .map_err(|error| format!("无法访问项目目录：{error}"))?;
+    if !project.join("project.json").is_file() {
+        return Err("请先保存项目，再生成首帧。".into());
+    }
+
+    let payload = serde_json::json!({
+        "model": "image-01",
+        "prompt": prompt,
+        "aspect_ratio": "16:9",
+        "response_format": "url",
+        "n": 1,
+        "prompt_optimizer": true,
+        "aigc_watermark": false,
+    });
+    let response = client()
+        .post(format!("{MINIMAX_API_BASE}/image_generation"))
+        .bearer_auth(api_key.trim())
+        .json(&payload)
+        .send()
+        .await
+        .map_err(network_error)?;
+    let status = response.status();
+    let body: ImageGenerationResponse = response.json().await.map_err(parse_error)?;
+    ensure_success(status, &body.base_resp)?;
+    let url = body.data.image_urls.first().ok_or("MiniMax 未返回生成的首帧。")?;
+    let bytes = client().get(url).send().await.map_err(network_error)?
+        .error_for_status().map_err(network_error)?.bytes().await.map_err(network_error)?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err("生成的首帧超过 20 MB，无法保存。".into());
+    }
+    let name = format!("AI-首帧-{}.jpg", safe_folder_name(&shot_id));
+    let destination = unique_asset_path(&project.join("assets"), &safe_folder_name(&name), "jpg");
+    std::fs::write(&destination, bytes).map_err(|error| format!("无法保存生成的首帧：{error}"))?;
+    Ok(ImportedImage { path: destination.to_string_lossy().into_owned(), name })
 }
 
 #[tauri::command]
@@ -853,6 +912,7 @@ pub fn run() {
             allow_project_assets,
             import_audio,
             import_visual_reference,
+            minimax_generate_first_frame,
             read_project_image_data_url,
             create_project_directory,
             open_project_file,

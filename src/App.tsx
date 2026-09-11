@@ -14,6 +14,7 @@ import {
   FolderOpen,
   HardDrive,
   History,
+  ImagePlus,
   KeyRound,
   MessageCircleMore,
   MoreHorizontal,
@@ -26,6 +27,7 @@ import {
   ShieldCheck,
   Save,
   Sparkles,
+  Upload,
   Download,
   WandSparkles,
   Volume2,
@@ -489,6 +491,8 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   const [generationProgress, setGenerationProgress] = useState("正在提交生成任务…");
   const [mediaErrorShotId, setMediaErrorShotId] = useState<string | null>(null);
   const [timelinePanning, setTimelinePanning] = useState(false);
+  const [firstFrameBusy, setFirstFrameBusy] = useState<"generate" | "upload" | null>(null);
+  const [firstFrameError, setFirstFrameError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewAdvancePendingRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -734,6 +738,64 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
     }
   };
 
+  const updateSelectedFirstFrame = (reference: Shot["firstFrame"], approved = false) => {
+    if (!selected) return;
+    const next = {
+      ...project,
+      updatedAt: new Date().toISOString(),
+      scenes: project.scenes.map((scene) => ({
+        ...scene,
+        shots: scene.shots.map((shot) => shot.id === selected.id
+          ? { ...archiveShot(shot), firstFrame: reference, firstFrameApproved: approved, continuityStale: !!(shot.localAssetPath || shot.videoUrl), taskId: undefined }
+          : shot),
+      })),
+    };
+    onUpdate(invalidateDownstreamContinuity(next, selected.id));
+  };
+
+  const uploadFirstFrame = async () => {
+    if (!selected || firstFrameBusy) return;
+    if (!project.localPath) { onSaveAs(); return; }
+    setFirstFrameBusy("upload");
+    setFirstFrameError(null);
+    try {
+      const image = await invoke<{ path: string; name: string } | null>("import_visual_reference", { projectPath: project.localPath });
+      if (image) updateSelectedFirstFrame({ name: image.name, localPath: image.path });
+    } catch (error) {
+      setFirstFrameError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFirstFrameBusy(null);
+    }
+  };
+
+  const generateFirstFrame = async () => {
+    if (!selected || firstFrameBusy) return;
+    if (!project.localPath) { onSaveAs(); return; }
+    if (settings.provider !== "minimax") {
+      setFirstFrameError("AI 首帧生成需要在设置中选择 MiniMax，并填写 API Key。");
+      return;
+    }
+    setFirstFrameBusy("generate");
+    setFirstFrameError(null);
+    try {
+      const prompt = [
+        `电影项目：${project.synopsis}`,
+        `视觉风格：${project.visualStyle}`,
+        selectedScene && `场景：${selectedScene.location}；氛围：${selectedScene.mood}`,
+        `镜头：${selected.description}`,
+        `构图：${selected.framing}`,
+        ...(project.characters ?? []).filter((character) => selected.characterIds?.includes(character.id)).map((character) => `角色 ${character.name}：${character.description}`),
+        "生成一张可直接作为视频起始画面的电影分镜首帧，16:9，无文字、无字幕、无水印。",
+      ].filter(Boolean).join("。 ").slice(0, 1500);
+      const image = await invoke<{ path: string; name: string }>("minimax_generate_first_frame", { apiKey, projectPath: project.localPath, shotId: selected.id, prompt });
+      updateSelectedFirstFrame({ name: image.name, localPath: image.path });
+    } catch (error) {
+      setFirstFrameError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFirstFrameBusy(null);
+    }
+  };
+
   return (
     <div className="studio-view">
       <header className="studio-header workspace-header">
@@ -766,7 +828,19 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="preview-canvas">
             <div className="frame-lines" />
             {showContinuityWarnings(selected) && directionIssue ? (
-              <div className="generation-recovery"><h3>确认镜头首帧</h3><p>{directionIssue}</p></div>
+              <div className="first-frame-gate">
+                {selected?.firstFrame ? <img src={convertFileSrc(selected.firstFrame.localPath)} alt={`镜头首帧：${selected.firstFrame.name}`} /> : <div className="first-frame-symbol"><ImagePlus size={25} /></div>}
+                <span className="recovery-kicker">OPENING FRAME</span>
+                <h3>{selected?.firstFrame ? "确认镜头首帧" : "为镜头准备首帧"}</h3>
+                <p>{directionIssue}</p>
+                <div className="first-frame-actions">
+                  {selected?.firstFrame && <button className="primary-button compact" disabled={!!firstFrameBusy} onClick={() => updateSelectedFirstFrame(selected.firstFrame, true)}><Check size={15} /> 确认并使用</button>}
+                  <button className={selected?.firstFrame ? "secondary-button compact" : "primary-button compact"} disabled={!!firstFrameBusy} onClick={() => void generateFirstFrame()}><WandSparkles size={15} /> {firstFrameBusy === "generate" ? "正在生成…" : selected?.firstFrame ? "重新生成" : "AI 生成首帧"}</button>
+                  <button className="secondary-button compact" disabled={!!firstFrameBusy} onClick={() => void uploadFirstFrame()}><Upload size={15} /> {firstFrameBusy === "upload" ? "正在上传…" : selected?.firstFrame ? "替换图片" : "上传首帧"}</button>
+                </div>
+                {firstFrameError && <p className="first-frame-error" role="alert">{firstFrameError}</p>}
+                {!selected?.firstFrame && <small>AI 会根据场景、角色与镜头描述生成 16:9 构图；上传支持 JPG、PNG、WebP。</small>}
+              </div>
             ) : showContinuityWarnings(selected) && continuityBlocked ? (
               <div className="generation-recovery"><div className="recovery-icon"><AlertCircle size={22} /></div><span className="recovery-kicker">CONTINUITY CHAIN BROKEN</span><h3>请先完成上一镜头</h3><p>“{previousShot?.title}”尚未生成、素材不可用或连续性已经过期。为保证尾帧续拍，当前镜头暂不能生成。</p></div>
             ) : showContinuityWarnings(selected) && selected?.continuityStale ? (
@@ -791,7 +865,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
           <div className="panel-heading"><span><Sparkles size={15} /> AI 导演</span><div className="mode-switch"><button className={!directorMode ? "active" : ""} onClick={() => setDirectorMode(false)}>普通</button><button className={directorMode ? "active" : ""} onClick={() => setDirectorMode(true)}>导演</button></div></div>
           <div className="director-conversation">
             <section className="shot-direction"><h3>电影导演风格</h3><select aria-label="选择导演风格" disabled={!!activeGenerationId} value="" onChange={(event) => { const style = directorStyles.find((item) => item.id === event.target.value); onUpdate({ ...invalidateAllContinuity(project), directorStyle: style ? { ...style } : undefined, updatedAt: new Date().toISOString() }); }}><option value="" disabled>选择或更新风格…</option><option value="none">不使用导演风格</option>{directorStyles.map((style) => <option value={style.id} key={style.id}>{style.name}</option>)}</select><p>当前：{project.directorStyle?.name ?? "未启用"}</p>{project.directorStyle && <details><summary>查看生成指令</summary><p>{project.directorStyle.prompt}</p></details>}<p>应用于整部电影的新生成任务；更换后已有镜头会标记为需重生成。</p></section>
-            {selected && <ShotDirectionPanel key={`${project.id}-${selected.id}`} project={project} shot={selected} disabled={!!activeGenerationId} onUpdate={onUpdate} onSave={onSaveAs} />}
+            {selected && <ShotDirectionPanel key={`${project.id}-${selected.id}`} project={project} shot={selected} disabled={!!activeGenerationId || !!firstFrameBusy} onUpdate={onUpdate} onSave={onSaveAs} onGenerateFirstFrame={generateFirstFrame} />}
             {selected?.generationSnapshot && <section className="generation-snapshot">
               <div className="snapshot-heading"><div><span>GENERATION SNAPSHOT</span><h3>本视频生成记录</h3></div><i>已锁定</i></div>
               <div className="snapshot-specs"><span>{selected.generationSnapshot.modelId}</span><span>{selected.generationSnapshot.resolution}</span><span>{selected.generationSnapshot.duration} 秒</span></div>

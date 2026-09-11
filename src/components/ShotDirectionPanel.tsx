@@ -7,7 +7,7 @@ import { invalidateAllContinuity, invalidateDownstreamContinuity } from "../lib/
 import { buildShotPrompt } from "../lib/providers";
 import { auditShotContinuity } from "../lib/continuityAudit";
 
-export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }: { project: MovieProject; shot: Shot; disabled: boolean; onUpdate: (project: MovieProject) => void; onSave: () => void }) {
+export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave, onGenerateFirstFrame }: { project: MovieProject; shot: Shot; disabled: boolean; onUpdate: (project: MovieProject) => void; onSave: () => void; onGenerateFirstFrame: () => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const latest = useRef(project);
@@ -61,7 +61,7 @@ export function ShotDirectionPanel({ project, shot, disabled, onUpdate, onSave }
     <p>动作延续默认接上一镜头出点；切换机位或转场使用本镜头确认后的首帧。</p>
     {framingWarning(shot, project) && <p role="status">{framingWarning(shot, project)}</p>}
     <ActionEditor key={`${shot.id}-${JSON.stringify(shot.actionPlan)}`} shot={shot} project={project} disabled={locked} onSave={(actionPlan) => updateShot({ actionPlan })} />
-    <button disabled={locked} onClick={() => void importImage()}>{shot.firstFrame ? "替换镜头首帧" : "导入镜头首帧"}</button>
+    <div className="first-frame-panel-actions"><button disabled={locked} onClick={() => void onGenerateFirstFrame()}>{shot.firstFrame ? "AI 重新生成首帧" : "AI 生成首帧"}</button><button disabled={locked} onClick={() => void importImage()}>{shot.firstFrame ? "上传替换" : "上传首帧"}</button></div>
     {shot.firstFrame && <><img className="direction-preview" src={convertFileSrc(shot.firstFrame.localPath)} alt={`分镜首帧：${shot.firstFrame.name}`} /><label><input type="checkbox" checked={!!shot.firstFrameApproved} disabled={locked} onChange={(event) => updateShot({ firstFrameApproved: event.target.checked })} />已核对角色、站位和构图</label><button disabled={locked} onClick={() => updateShot({ firstFrame: undefined, firstFrameApproved: false })}>移除首帧引用</button></>}
     <button disabled={locked} onClick={() => void importSceneImage()}>{scene?.visualReference ? "更换场景视觉基准" : "设置场景视觉基准"}</button>
     {scene?.visualReference && <><img className="direction-preview" src={convertFileSrc(scene.visualReference.localPath)} alt={`场景视觉基准：${scene.visualReference.name}`} /><button disabled={locked} onClick={() => updateSceneReference(undefined)}>移除场景视觉基准</button></>}
