@@ -416,8 +416,9 @@ async fn minimax_generate_first_frame(
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("生成的首帧超过 20 MB，无法保存。".into());
     }
-    let name = format!("AI-首帧-{}.jpg", safe_folder_name(&shot_id));
-    let destination = unique_asset_path(&project.join("assets"), &safe_folder_name(&name), "jpg");
+    let stem = format!("AI-首帧-{}", safe_folder_name(&shot_id));
+    let name = format!("{stem}.jpg");
+    let destination = unique_asset_path(&project.join("assets"), &stem, "jpg");
     std::fs::write(&destination, bytes).map_err(|error| format!("无法保存生成的首帧：{error}"))?;
     Ok(ImportedImage { path: destination.to_string_lossy().into_owned(), name })
 }

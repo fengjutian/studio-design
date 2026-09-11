@@ -515,6 +515,7 @@ function StudioView({ project, selectedShotId, onSelectShot, onUpdate, onBack, s
   useEffect(() => {
     previewAdvancePendingRef.current = false;
     setMediaErrorShotId(null);
+    setFirstFrameError(null);
   }, [selected?.id, selectedSource]);
 
   useEffect(() => {
